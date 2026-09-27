@@ -1,0 +1,7 @@
+# API local
+
+Documentación interactiva: `/docs`. La sesión se obtiene con `POST /api/v1/login` (`{"username":"operador-a","password":"..."}`) y se envía con `Authorization: Bearer TOKEN`.
+
+`POST /api/v1/cameras` acepta `{"name":"Cámara 1","location":"Entrada","timezone":"America/Bogota"}`. `POST /api/v1/recordings` acepta multipart `camera_id` y `file` MP4; responde `{id,status,sha256}`. `GET /api/v1/recordings/{id}` indica avance. `POST /api/v1/chat` acepta `{"recording_id":"UUID","message":"muéstrame fotogramas en los últimos 5 minutos"}` y devuelve `intent`, `window`, `answer`, `items` y `coverage`. `POST /api/v1/clips` acepta `recording_id`, `start`, `end` en segundos; devuelve URL y hash. `POST /api/v1/cases` acepta `recording_id`, `title`, `note`; el informe se obtiene con `GET /api/v1/cases/{id}/report`. `GET /api/v1/metrics` consulta totales reales. Los medios protegidos se consultan con `GET /api/v1/media/{frame|clip|recording}/{id}`.
+
+Las respuestas HTTP de error incluyen `detail`; los objetos ajenos se presentan como 404. El acceso a medios requiere cabecera de sesión, incluido en la interfaz mediante solicitudes autenticadas. La paginación completa y grupos de cámaras son posteriores.

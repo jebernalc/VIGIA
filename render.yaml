@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: vigia-video
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: VIGIA_PASSWORD_A
+        generateValue: true
+      - key: VIGIA_PASSWORD_B
+        generateValue: true
