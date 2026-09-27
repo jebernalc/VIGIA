@@ -8,6 +8,9 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import urllib.request
+import urllib.error
+import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -20,6 +23,55 @@ DATA.mkdir(parents=True, exist_ok=True)
 POOL = ThreadPoolExecutor(max_workers=2)
 app = FastAPI(title='VIGÍA', version='0.1.0')
 TOKENS = {}
+REVOKED = set()
+BOOTSTRAP_LOCK = threading.Lock()
+SUPABASE_URL = os.getenv('VIGIA_SUPABASE_URL','').rstrip('/')
+SUPABASE_KEY = os.getenv('VIGIA_SUPABASE_PUBLISHABLE_KEY','')
+if bool(SUPABASE_URL) != bool(SUPABASE_KEY):
+    raise RuntimeError('Configura juntas VIGIA_SUPABASE_URL y VIGIA_SUPABASE_PUBLISHABLE_KEY')
+SUPABASE_MODE = bool(SUPABASE_URL and SUPABASE_KEY)
+
+def supabase_request(method,path,token=None,payload=None):
+    headers={'apikey':SUPABASE_KEY,'Content-Type':'application/json'}
+    if token: headers['Authorization']='Bearer '+token
+    if method in ('POST','PATCH'): headers['Prefer']='return=minimal'
+    req=urllib.request.Request(SUPABASE_URL+path,method=method,headers=headers,
+        data=json.dumps(payload).encode() if payload is not None else None)
+    try:
+        with urllib.request.urlopen(req,timeout=12) as response:
+            raw=response.read()
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        if e.code in (401,403): raise HTTPException(401,'Sesión inválida o sin autorización')
+        if e.code==409: raise HTTPException(409,'El registro ya existe')
+        raise HTTPException(502,'Supabase no pudo completar la solicitud')
+    except (urllib.error.URLError,TimeoutError):
+        raise HTTPException(503,'No se pudo conectar con el servicio de usuarios')
+
+def membership(token,user_id):
+    from urllib.parse import quote
+    rows=supabase_request('GET','/rest/v1/vigia_miembros?select=organizacion_id,rol&usuario_id=eq.'+quote(user_id,safe='')+'&limit=1',token)
+    return rows[0] if rows else None
+
+def bootstrap(token,user):
+    uid=user['id']; existing=membership(token,uid)
+    if existing:return existing
+    with BOOTSTRAP_LOCK:
+        existing=membership(token,uid)
+        if existing:return existing
+        from urllib.parse import quote
+        previous=supabase_request('GET','/rest/v1/vigia_organizaciones?select=id&creado_por=eq.'+quote(uid,safe='')+'&order=creado_en.asc&limit=1',token)
+        oid=previous[0]['id'] if previous else str(uuid.uuid4())
+        if not previous:
+            name=str(user.get('user_metadata',{}).get('organizacion') or 'Mi organización VIGÍA').strip()[:120]
+            supabase_request('POST','/rest/v1/vigia_organizaciones',token,{'id':oid,'nombre':name,'creado_por':uid})
+        try:
+            supabase_request('POST','/rest/v1/vigia_miembros',token,{'organizacion_id':oid,'usuario_id':uid,'rol':'maestro'})
+        except HTTPException as e:
+            if e.status_code!=409:raise
+        result=membership(token,uid)
+        if not result:raise HTTPException(503,'No se pudo establecer la organización')
+        return result
 
 def db():
     c = sqlite3.connect(DATA / 'vigia.db', timeout=30)
@@ -43,7 +95,7 @@ def init():
         ''')
         for oid,name in [('demo-a','Institución Andina'),('demo-b','Institución Norte')]:
             c.execute('INSERT OR IGNORE INTO org VALUES (?,?)',(oid,name))
-        for oid,username,key in [('demo-a','operador-a','VIGIA_PASSWORD_A'),('demo-b','operador-b','VIGIA_PASSWORD_B')]:
+        for oid,username,key in ([] if SUPABASE_MODE else [('demo-a','operador-a','VIGIA_PASSWORD_A'),('demo-b','operador-b','VIGIA_PASSWORD_B')]):
             if not c.execute('SELECT 1 FROM users WHERE username=?',(username,)).fetchone():
                 password=os.getenv(key) or secrets.token_urlsafe(15)
                 salt=secrets.token_hex(16)
@@ -55,10 +107,21 @@ init()
 
 def auth(req):
     token=req.headers.get('Authorization','').removeprefix('Bearer ').strip()
+    if token in REVOKED:raise HTTPException(401,'Sesión cerrada')
+    if SUPABASE_MODE:
+        if not token:raise HTTPException(401,'Inicia sesión para continuar')
+        user=supabase_request('GET','/auth/v1/user',token)
+        member=membership(token,user['id'])
+        if not member:raise HTTPException(403,'No tienes una organización VIGÍA')
+        return {'org':member['organizacion_id'],'username':user.get('email','Usuario'),
+                'role':member['rol'],'expires':time.time()+120}
     info=TOKENS.get(token)
     if not info or info['expires'] < time.time():
         raise HTTPException(401,'Inicia sesión para continuar')
     return info
+
+def require_role(user,*roles):
+    if user['role'] not in roles:raise HTTPException(403,'Tu perfil no permite realizar esta acción')
 
 def row(c,table,oid,org):
     # All object lookup paths are tenant scoped.
@@ -83,6 +146,19 @@ def run(*args):
 @app.post('/api/v1/login')
 async def login(req:Request):
     v=await req.json()
+    if SUPABASE_MODE:
+        email=str(v.get('username','')).strip().lower()
+        password=str(v.get('password',''))
+        if not email or not password:raise HTTPException(422,'Escribe tu correo y contraseña')
+        from urllib.parse import quote
+        try:
+            session=supabase_request('POST','/auth/v1/token?grant_type=password',payload={'email':email,'password':password})
+        except HTTPException as e:
+            if e.status_code==502:raise HTTPException(401,'Revisa tus credenciales o confirma tu correo electrónico')
+            raise
+        token=session['access_token']
+        member=bootstrap(token,session['user'])
+        return {'token':token,'org':member['organizacion_id'],'role':member['rol']}
     with db() as c:
         user=c.execute('SELECT * FROM users WHERE username=?',(v.get('username'),)).fetchone()
     if not user: raise HTTPException(401,'Credenciales incorrectas')
@@ -92,9 +168,33 @@ async def login(req:Request):
     TOKENS[token]={'org':user['org'],'username':user['username'],'role':user['role'],'expires':time.time()+8*3600}
     return {'token':token,'org':user['org'],'role':user['role']}
 
+@app.get('/api/v1/config')
+def config():
+    return {'registro_disponible':SUPABASE_MODE,'modo':'supabase' if SUPABASE_MODE else 'local'}
+
+@app.post('/api/v1/register')
+async def register(req:Request):
+    if not SUPABASE_MODE:raise HTTPException(404,'El registro requiere configurar Supabase')
+    v=await req.json()
+    email=str(v.get('email','')).strip().lower()
+    password=str(v.get('password',''))
+    org_name=str(v.get('organizacion','')).strip()
+    if '@' not in email or len(email)>254 or len(password)<12 or len(org_name)<3 or len(org_name)>120:
+        raise HTTPException(422,'Indica correo válido, organización y contraseña de 12 caracteres o más')
+    try:
+        supabase_request('POST','/auth/v1/signup',payload={'email':email,'password':password,'data':{'organizacion':org_name}})
+    except HTTPException as e:
+        if e.status_code==502:raise HTTPException(422,'No se pudo crear la cuenta. Revisa el correo y la contraseña')
+        raise
+    return {'message':'Cuenta solicitada. Revisa tu correo para confirmar el registro y después inicia sesión.'}
+
 @app.post('/api/v1/logout')
 def logout(req:Request):
     token=req.headers.get('Authorization','').removeprefix('Bearer ').strip()
+    if SUPABASE_MODE and token:
+        try:supabase_request('POST','/auth/v1/logout',token)
+        except HTTPException:pass
+        REVOKED.add(token)
     TOKENS.pop(token,None)
     return {'message':'Sesión cerrada'}
 
@@ -106,6 +206,7 @@ def cameras(req:Request):
 @app.post('/api/v1/cameras')
 async def camera(req:Request):
     u=auth(req); v=await req.json()
+    require_role(u,'maestro','administrator')
     name=str(v.get('name','')).strip()[:100]
     if not name: raise HTTPException(422,'Indica el nombre')
     oid=str(uuid.uuid4())
@@ -133,6 +234,7 @@ def process(rec_id,path,org):
 @app.post('/api/v1/recordings')
 async def upload(req:Request,camera_id:str=Form(...),file:UploadFile=File(...)):
     u=auth(req)
+    require_role(u,'maestro','administrator','supervisor','operador')
     if not file.filename.lower().endswith('.mp4'): raise HTTPException(415,'Solo MP4')
     with db() as c: row(c,'camera',camera_id,u['org'])
     rid=str(uuid.uuid4()); dest=DATA / u['org'] / 'originals' / f'{rid}.mp4';dest.parent.mkdir(parents=True,exist_ok=True)
@@ -183,6 +285,7 @@ def media(req:Request,kind:str,oid:str):
 @app.post('/api/v1/clips')
 async def clip(req:Request):
     u=auth(req);v=await req.json();rid=str(v.get('recording_id',''))
+    require_role(u,'maestro','administrator','supervisor','investigador')
     with db() as c: rec=row(c,'recording',rid,u['org'])
     start=float(v.get('start',0));end=float(v.get('end',0))
     if rec['status']!='ready' or not (0<=start<end<=rec['duration'] and end-start<=300): raise HTTPException(422,'Intervalo fuera de la grabación o superior a 5 minutos')
@@ -218,6 +321,7 @@ async def chat(req:Request):
 @app.post('/api/v1/cases')
 async def create_case(req:Request):
     u=auth(req);v=await req.json();rid=str(v.get('recording_id',''))
+    require_role(u,'maestro','administrator','supervisor','investigador')
     with db() as c:
         row(c,'recording',rid,u['org']);oid=str(uuid.uuid4());eid=str(uuid.uuid4())
         c.execute('INSERT INTO cases VALUES (?,?,?,?,?,?)',(oid,u['org'],str(v.get('title','Investigación'))[:120],str(v.get('note',''))[:3000],'hipótesis',time.time()))
@@ -245,6 +349,31 @@ def metrics(req:Request):
     u=auth(req)
     with db() as c:
         return {name:c.execute(f'SELECT COUNT(*) FROM {table} WHERE org=?'+condition,(u['org'],)).fetchone()[0] for name,table,condition in [('cameras','camera',''),('recordings','recording'," AND status='ready'"),('pending','recording'," AND status='processing'"),('frames','frame',''),('clips','clip',''),('cases','cases','')]}
+
+@app.get('/api/v1/master')
+def master(req:Request):
+    u=auth(req);require_role(u,'maestro','administrator')
+    if SUPABASE_MODE:
+        token=req.headers.get('Authorization','').removeprefix('Bearer ').strip()
+        rows=supabase_request('GET','/rest/v1/vigia_organizaciones?select=id,nombre&id=eq.'+u['org']+'&limit=1',token)
+        if not rows:raise HTTPException(404,'Organización no disponible')
+        name=rows[0]['nombre']
+    else:
+        with db() as c:name=c.execute('SELECT name FROM org WHERE id=?',(u['org'],)).fetchone()['name']
+    return {'organizacion_id':u['org'],'organizacion':name,'usuario':u['username'],'rol':u['role']}
+
+@app.patch('/api/v1/master/organization')
+async def rename_organization(req:Request):
+    u=auth(req);require_role(u,'maestro','administrator');v=await req.json()
+    name=str(v.get('nombre','')).strip()
+    if len(name)<3 or len(name)>120:raise HTTPException(422,'El nombre debe tener entre 3 y 120 caracteres')
+    if SUPABASE_MODE:
+        token=req.headers.get('Authorization','').removeprefix('Bearer ').strip()
+        supabase_request('PATCH','/rest/v1/vigia_organizaciones?id=eq.'+u['org'],token,{'nombre':name})
+    else:
+        with db() as c:c.execute('UPDATE org SET name=? WHERE id=?',(name,u['org']))
+    with db() as c:audit(c,u,'org.rename',u['org'])
+    return {'organizacion':name}
 
 @app.get('/')
 def home(): return FileResponse(ROOT/'static'/'index.html')

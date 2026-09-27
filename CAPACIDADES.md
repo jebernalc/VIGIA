@@ -4,6 +4,7 @@
 |---|---|---|
 | Interfaz en español y navegación adaptable | Implementada y comprobada con verificación sintáctica | Falta validación visual en navegadores reales y con usuarios. |
 | Dos organizaciones y acceso aislado | Implementado y probado | Prueba automatizada de recursos y descargas entre organizaciones. |
+| Registro con correo, cuenta maestra y pertenencia en Supabase | Implementado; verificación parcial | Dos migraciones aplicadas, RLS y políticas comprobadas. Flujo de Auth, edición de organización y separación probados con simulación; falta registrar un correo real y probar confirmación. |
 | Importación MP4, hash original y fotogramas reales | Implementado y probado | Video sintético generado con FFmpeg. |
 | Consultas de fotogramas por intervalo y chat | Implementado y probado | Parser determinista; tiempos relativos al archivo. |
 | Clips e informes preliminares | Implementado y probado | PDF mediante función de imprimir del navegador. |
