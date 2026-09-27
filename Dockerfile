@@ -3,7 +3,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ./
+COPY app.py cloud.py ./
 COPY static ./static
 RUN mkdir -p /app/data && useradd -r -u 10001 vigia && chown -R vigia:vigia /app
 USER vigia

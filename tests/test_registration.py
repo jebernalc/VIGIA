@@ -40,6 +40,16 @@ def test_supabase_registration_master_and_isolation(monkeypatch,tmp_path):
         raise AssertionError((method,path))
 
     monkeypatch.setattr(app,'supabase_request',fake)
+    cloud_rows={}
+    class FakeCloud:
+        def __init__(self,url,key,token):self.token=token
+        def insert(self,kind,data):cloud_rows.setdefault(kind,[]).append(data)
+        def list(self,kind,org,**kwargs):return [r for r in cloud_rows.get(kind,[]) if r['organizacion_id']==org]
+        def get(self,kind,oid,org):
+            matches=[r for r in self.list(kind,org) if r['id']==oid]
+            if not matches:raise HTTPException(404)
+            return matches[0]
+    monkeypatch.setattr(app,'Cloud',FakeCloud)
     c=TestClient(app.app)
     for email,org in [('a@example.com','Empresa A'),('b@example.com','Empresa B')]:
         assert c.post('/api/v1/register',json={'email':email,'password':'twelve-character-secret','organizacion':org}).status_code==200

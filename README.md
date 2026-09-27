@@ -1,4 +1,4 @@
-# VIGÍA local · versión 0.2
+# VIGÍA · versión 0.3
 
 Aplicación experimental de investigación de video histórico en español. Requiere Python 3.11+, FFmpeg y FFprobe. El servidor sirve el frontend y la API desde el mismo origen.
 
@@ -9,7 +9,7 @@ La interfaz ofrece dos modos:
 - **Con Supabase:** configura `VIGIA_SUPABASE_URL` y `VIGIA_SUPABASE_PUBLISHABLE_KEY` (la clave pública, nunca la `service_role`). Aparecen «Crear cuenta maestra» e «Iniciar sesión». La persona registra correo, organización y contraseña de al menos 12 caracteres; confirma su correo y después inicia sesión. En su primer acceso se crea su organización y la membresía `maestro` en las tablas `vigia_organizaciones` y `vigia_miembros` con RLS. Cada nuevo registro crea una organización independiente. La API valida el token contra Supabase Auth y comprueba la membresía en cada consulta. No se usan metadatos editables del usuario para otorgar roles.
 - **Sin Supabase:** continúa el modo local de demostración, con los dos usuarios generados al iniciar por primera vez. Este modo no muestra registro público.
 
-Las migraciones aplicadas al proyecto activo se conservan en `supabase/001_vigia_auth.sql` y `supabase/002_vigia_master.sql`. El usuario maestro puede cambiar el nombre de su propia organización desde **Administración**; la API verifica el rol y una política RLS comprueba el creador y la membresía. Cada registro crea un maestro **de su propia organización**, sin acceso global a las demás. Las tablas de videos, cámaras, clips y expedientes **continúan en SQLite y los archivos en disco local**; la conexión de Supabase de esta versión gestiona las cuentas y la pertenencia a organizaciones. Antes de convertirla en un servicio persistente deben migrarse esos datos y los medios a almacenamiento privado. Los usuarios de otras aplicaciones del proyecto Supabase no obtienen automáticamente acceso a VIGÍA.
+Las tres migraciones aplicadas al proyecto activo se conservan en `supabase/`. El usuario maestro puede cambiar el nombre de su propia organización desde **Administración**; la API verifica el rol y una política RLS comprueba el creador y la membresía. Cada registro crea un maestro **de su propia organización**, sin acceso global a las demás. En modo Supabase, cámaras, grabaciones, fotogramas, clips, expedientes y auditoría se guardan en tablas `vigia_*` con RLS y los MP4/JPEG en el bucket privado `vigia-evidencias`. Las descargas requieren JWT del usuario y se comprueba el SHA-256 del objeto. Los usuarios de otras aplicaciones del proyecto Supabase no obtienen automáticamente acceso a VIGÍA.
 
 ```bash
 cd VIGIA
@@ -31,7 +31,7 @@ Video sintético de prueba, sin datos personales:
 ffmpeg -f lavfi -i testsrc=size=640x360:rate=10 -t 20 -pix_fmt yuv420p sample.mp4
 ```
 
-Los originales reciben hash SHA-256 y se guardan aparte de fotogramas y clips. Los segundos representan posición dentro del archivo; **no hay hora de captura inferida**. Cada consulta por objetos responde honestamente que falta detector. No existen RTSP, reglas, alertas ni procesamiento de flujos en vivo todavía. El tamaño máximo de carga es 250 MB, duración máxima de 2 horas y la extracción máxima de clip 5 minutos.
+Los originales reciben hash SHA-256 y se guardan aparte de fotogramas y clips. Los segundos representan posición dentro del archivo; **no hay hora de captura inferida**. Cada consulta por objetos responde honestamente que falta detector. No existen RTSP, reglas, alertas ni procesamiento de flujos en vivo todavía. En modo local, el tamaño máximo es 250 MB y duración máxima de 2 horas. En modo Supabase, el máximo es 50 MB y 5 minutos; el trabajo de extracción corre en el proceso web y requiere que la sesión siga vigente. En ambos modos, la extracción máxima de clip es 5 minutos.
 
 Mejoras prioritarias: sesiones persistentes y revocables; cuotas por cliente; validación rigurosa del contenedor/códecs y aislamiento del proceso FFmpeg; trabajos persistentes con reintentos; detector CPU optativo y su evaluación; permisos por rol y cámara; conservación probatoria y retención configurables; RTSP/ONVIF y búfer de eventos en un agente de borde. Consulte `ARCHITECTURE.md`.
 
@@ -39,4 +39,4 @@ Mejoras prioritarias: sesiones persistentes y revocables; cuotas por cliente; va
 
 El repositorio incluye `Dockerfile` y `render.yaml` para crear un servicio web en Render mediante su opción de Blueprint. El servicio instala FFmpeg y publica la API y la interfaz en un mismo origen. El Blueprint configura la URL y la clave **publicable** de Supabase. Nunca coloques la clave secreta o `service_role` en GitHub. El dominio final debe añadirse a los destinos permitidos de confirmación de correo en Supabase Auth si se quiere que el enlace de confirmación regrese directamente a VIGÍA.
 
-La modalidad gratuita puede suspenderse cuando no se usa y su disco local es temporal: los videos, expedientes y bases de datos pueden perderse durante reinicios o redespliegues. Esta publicación sirve **solo para ensayos con video sintético**. Una operación institucional necesita disco persistente u objetos privados, base de datos gestionada, gestión robusta de usuarios y endurecimiento de la API antes de cargar imágenes sensibles.
+La modalidad gratuita puede suspenderse cuando no se usa. En modo Supabase, los metadatos y los objetos quedan almacenados de forma persistente en Supabase, pero la caché local y los trabajos en curso se pierden al reiniciar el contenedor. La extracción no tiene una cola durable; un despliegue o un vencimiento de sesión puede dejar una grabación pendiente o fallida. No hay detector de objetos, transmisión en vivo ni cuotas institucionales. Prueba primero con video sintético y configura el dominio final en los destinos permitidos de Supabase Auth.

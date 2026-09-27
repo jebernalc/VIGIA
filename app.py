@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, HTMLResponse
+from cloud import Cloud
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.getenv('VIGIA_DATA', str(ROOT / 'data'))).resolve()
@@ -113,7 +114,7 @@ def auth(req):
         user=supabase_request('GET','/auth/v1/user',token)
         member=membership(token,user['id'])
         if not member:raise HTTPException(403,'No tienes una organización VIGÍA')
-        return {'org':member['organizacion_id'],'username':user.get('email','Usuario'),
+        return {'org':member['organizacion_id'],'username':user.get('email','Usuario'),'user_id':user['id'],
                 'role':member['rol'],'expires':time.time()+120}
     info=TOKENS.get(token)
     if not info or info['expires'] < time.time():
@@ -122,6 +123,28 @@ def auth(req):
 
 def require_role(user,*roles):
     if user['role'] not in roles:raise HTTPException(403,'Tu perfil no permite realizar esta acción')
+
+def cloud(req):
+    return Cloud(SUPABASE_URL,SUPABASE_KEY,req.headers.get('Authorization','').removeprefix('Bearer ').strip())
+
+def cloud_audit(client,user,action,oid):
+    client.insert('audit',{'id':str(uuid.uuid4()),'organizacion_id':user['org'],
+        'actor':user['user_id'],'accion':action,'objeto_id':oid})
+
+def cloud_recording(r):
+    return {'id':r['id'],'camera':r['camara_id'],'name':r['nombre'],'sha256':r['sha256'],
+        'size':r['tamano'],'duration':r['duracion'],'status':r['estado'],
+        'uploaded':r['cargado_en'],'error':r['error'],'path':None}
+
+def cloud_frame(f):
+    return {'id':f['id'],'second':f['segundo'],'sha256':f['sha256'],
+        'url':'/api/v1/media/frame/'+f['id']}
+
+def cached_media(client,key,sha,org,oid,extension):
+    dest=DATA/org/'cache'/f'{oid}.{extension}'
+    if not dest.exists() or digest(dest)!=sha:
+        client.download(key,dest,sha)
+    return dest
 
 def row(c,table,oid,org):
     # All object lookup paths are tenant scoped.
@@ -201,6 +224,9 @@ def logout(req:Request):
 @app.get('/api/v1/cameras')
 def cameras(req:Request):
     u=auth(req)
+    if SUPABASE_MODE:
+        return [{'id':r['id'],'name':r['nombre'],'timezone':r['zona_horaria'],
+                 'location':r['ubicacion'],'source':r['fuente']} for r in cloud(req).list('camera',u['org'],order='creado_en.desc')]
     with db() as c: return [dict(r) for r in c.execute('SELECT * FROM camera WHERE org=?',(u['org'],))]
 
 @app.post('/api/v1/cameras')
@@ -210,65 +236,110 @@ async def camera(req:Request):
     name=str(v.get('name','')).strip()[:100]
     if not name: raise HTTPException(422,'Indica el nombre')
     oid=str(uuid.uuid4())
+    if SUPABASE_MODE:
+        client=cloud(req)
+        client.insert('camera',{'id':oid,'organizacion_id':u['org'],'nombre':name,
+            'zona_horaria':str(v.get('timezone','America/Bogota'))[:60],
+            'ubicacion':str(v.get('location',''))[:150],'fuente':'archivo'})
+        cloud_audit(client,u,'camera.create',oid)
+        return {'id':oid,'name':name}
     with db() as c:
         c.execute('INSERT INTO camera VALUES (?,?,?,?,?,?)',(oid,u['org'],name,str(v.get('timezone','America/Bogota'))[:60],str(v.get('location',''))[:150],'archivo'))
         audit(c,u,'camera.create',oid)
     return {'id':oid,'name':name}
 
-def process(rec_id,path,org):
+def process(rec_id,path,org,token=None):
     try:
         meta=json.loads(run('ffprobe','-v','error','-show_format','-of','json',str(path)))
         duration=float(meta['format']['duration'])
-        if duration <= 0 or duration > 7200: raise ValueError('Duración fuera del límite de dos horas')
+        if duration <= 0 or duration > (300 if token else 7200):
+            raise ValueError('Duración fuera del límite: cinco minutos en modo nube')
         times=sorted(set(round(i*min(5,duration)/5,2) for i in range(6)) | set(range(0,int(duration)+1,5)))[:1500]
+        client=Cloud(SUPABASE_URL,SUPABASE_KEY,token) if token else None
         for sec in times:
             fid=str(uuid.uuid4()); dest=DATA / org / 'frames' / f'{fid}.jpg'
             dest.parent.mkdir(parents=True,exist_ok=True)
             run('ffmpeg','-nostdin','-v','error','-ss',str(sec),'-i',str(path),'-frames:v','1','-q:v','4','-y',str(dest))
             if dest.exists() and dest.stat().st_size:
-                with db() as c: c.execute('INSERT INTO frame VALUES (?,?,?,?,?,?)',(fid,org,rec_id,sec,str(dest),digest(dest)))
-        with db() as c: c.execute('UPDATE recording SET duration=?,status=? WHERE id=? AND org=?',(duration,'ready',rec_id,org))
+                if client:
+                    key=f'{org}/{rec_id}/fotogramas/{fid}.jpg'
+                    client.upload(key,dest,'image/jpeg')
+                    client.insert('frame',{'id':fid,'organizacion_id':org,'grabacion_id':rec_id,
+                        'segundo':sec,'objeto':key,'sha256':digest(dest)})
+                else:
+                    with db() as c: c.execute('INSERT INTO frame VALUES (?,?,?,?,?,?)',(fid,org,rec_id,sec,str(dest),digest(dest)))
+        if client:client.update('recording',rec_id,org,{'duracion':duration,'estado':'ready'})
+        else:
+            with db() as c:c.execute('UPDATE recording SET duration=?,status=? WHERE id=? AND org=?',(duration,'ready',rec_id,org))
     except Exception as e:
-        with db() as c: c.execute('UPDATE recording SET status=?,error=? WHERE id=? AND org=?',('failed',str(e)[:400],rec_id,org))
+        if token:
+            try:Cloud(SUPABASE_URL,SUPABASE_KEY,token).update('recording',rec_id,org,{'estado':'failed','error':str(e)[:300]})
+            except Exception:pass
+        else:
+            with db() as c:c.execute('UPDATE recording SET status=?,error=? WHERE id=? AND org=?',('failed',str(e)[:400],rec_id,org))
 
 @app.post('/api/v1/recordings')
 async def upload(req:Request,camera_id:str=Form(...),file:UploadFile=File(...)):
     u=auth(req)
-    require_role(u,'maestro','administrator','supervisor','operador')
+    require_role(u,*(['maestro'] if SUPABASE_MODE else ['maestro','administrator','supervisor','operador']))
     if not file.filename.lower().endswith('.mp4'): raise HTTPException(415,'Solo MP4')
-    with db() as c: row(c,'camera',camera_id,u['org'])
+    client=cloud(req) if SUPABASE_MODE else None
+    if client:client.get('camera',camera_id,u['org'])
+    else:
+        with db() as c: row(c,'camera',camera_id,u['org'])
     rid=str(uuid.uuid4()); dest=DATA / u['org'] / 'originals' / f'{rid}.mp4';dest.parent.mkdir(parents=True,exist_ok=True)
     size=0
     try:
         with dest.open('xb') as f:
             while part:=await file.read(1024*1024):
                 size+=len(part)
-                if size>250*1024*1024: raise HTTPException(413,'Máximo 250 MB')
+                if size>(50 if client else 250)*1024*1024: raise HTTPException(413,'Máximo 50 MB en modo nube')
                 f.write(part)
+        if not size:raise HTTPException(422,'El archivo está vacío')
         run('ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=codec_name','-of','default=noprint_wrappers=1',str(dest))
+        if client:
+            duration=float(json.loads(run('ffprobe','-v','error','-show_format','-of','json',str(dest)))['format']['duration'])
+            if duration<=0 or duration>300:raise HTTPException(422,'Máximo cinco minutos por grabación en modo nube')
     except Exception:
         dest.unlink(missing_ok=True)
         raise
-    with db() as c:
-        c.execute('INSERT INTO recording VALUES (?,?,?,?,?,?,?,?,?,?,?)',(rid,u['org'],camera_id,Path(file.filename).name[:150],str(dest),digest(dest),size,0,'processing',time.time(),None))
-        audit(c,u,'recording.upload',rid)
-    POOL.submit(process,rid,dest,u['org'])
+    checksum=digest(dest)
+    if client:
+        key=f'{u["org"]}/{rid}/original.mp4'
+        client.upload(key,dest,'video/mp4')
+        client.insert('recording',{'id':rid,'organizacion_id':u['org'],'camara_id':camera_id,
+            'nombre':Path(file.filename).name[:150],'objeto_original':key,'sha256':checksum,
+            'tamano':size,'duracion':duration,'estado':'processing'})
+        cloud_audit(client,u,'recording.upload',rid)
+        POOL.submit(process,rid,dest,u['org'],client.token)
+    else:
+        with db() as c:
+            c.execute('INSERT INTO recording VALUES (?,?,?,?,?,?,?,?,?,?,?)',(rid,u['org'],camera_id,Path(file.filename).name[:150],str(dest),checksum,size,0,'processing',time.time(),None))
+            audit(c,u,'recording.upload',rid)
+        POOL.submit(process,rid,dest,u['org'])
     return {'id':rid,'status':'processing','sha256':digest(dest)}
 
 @app.get('/api/v1/recordings')
 def recordings(req:Request):
     u=auth(req)
+    if SUPABASE_MODE:return [cloud_recording(r) for r in cloud(req).list('recording',u['org'],order='cargado_en.desc')]
     with db() as c: return [dict(r) | {'path':None} for r in c.execute('SELECT * FROM recording WHERE org=? ORDER BY uploaded DESC LIMIT 100',(u['org'],))]
 
 @app.get('/api/v1/recordings/{rid}')
 def recording(req:Request,rid:str):
     u=auth(req)
+    if SUPABASE_MODE:return cloud_recording(cloud(req).get('recording',rid,u['org']))
     with db() as c: return dict(row(c,'recording',rid,u['org'])) | {'path':None}
 
 @app.get('/api/v1/recordings/{rid}/frames')
 def frames(req:Request,rid:str,start:float=0,end:float=7200):
     u=auth(req)
     if start<0 or end<start or end-start>7200: raise HTTPException(422,'Ventana inválida')
+    if SUPABASE_MODE:
+        client=cloud(req);client.get('recording',rid,u['org'])
+        from urllib.parse import quote
+        fs=client.list('frame',u['org'],filters=f'grabacion_id=eq.{quote(rid)}&segundo=gte.{start}&segundo=lte.{end}',limit=60,order='segundo.desc')
+        return [cloud_frame(f) for f in fs]
     with db() as c:
         row(c,'recording',rid,u['org'])
         return [{'id':r['id'],'second':r['second'],'sha256':r['sha256'],'url':f'/api/v1/media/frame/{r["id"]}'} for r in c.execute('SELECT * FROM frame WHERE org=? AND recording=? AND second BETWEEN ? AND ? ORDER BY second DESC LIMIT 60',(u['org'],rid,start,end))]
@@ -278,6 +349,14 @@ def media(req:Request,kind:str,oid:str):
     u=auth(req)
     if kind not in ('frame','clip','recording'): raise HTTPException(404)
     table={'frame':'frame','clip':'clip','recording':'recording'}[kind]
+    if SUPABASE_MODE:
+        client=cloud(req);r=client.get(table,oid,u['org'])
+        key=r['objeto_original'] if kind=='recording' else r['objeto']
+        expected=f'{u["org"]}/'
+        if not key.startswith(expected):raise HTTPException(403,'Ruta de evidencia inválida')
+        path=cached_media(client,key,r['sha256'],u['org'],oid,'jpg' if kind=='frame' else 'mp4')
+        cloud_audit(client,u,kind+'.read',oid)
+        return FileResponse(path,media_type='image/jpeg' if kind=='frame' else 'video/mp4',headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
     with db() as c:
         r=row(c,table,oid,u['org']); audit(c,u,kind+'.read',oid)
     return FileResponse(r['path'],media_type='image/jpeg' if kind=='frame' else 'video/mp4',headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
@@ -285,21 +364,37 @@ def media(req:Request,kind:str,oid:str):
 @app.post('/api/v1/clips')
 async def clip(req:Request):
     u=auth(req);v=await req.json();rid=str(v.get('recording_id',''))
-    require_role(u,'maestro','administrator','supervisor','investigador')
-    with db() as c: rec=row(c,'recording',rid,u['org'])
+    require_role(u,*(['maestro'] if SUPABASE_MODE else ['maestro','administrator','supervisor','investigador']))
+    client=cloud(req) if SUPABASE_MODE else None
+    if client:rec=cloud_recording(client.get('recording',rid,u['org']))
+    else:
+        with db() as c: rec=row(c,'recording',rid,u['org'])
     start=float(v.get('start',0));end=float(v.get('end',0))
     if rec['status']!='ready' or not (0<=start<end<=rec['duration'] and end-start<=300): raise HTTPException(422,'Intervalo fuera de la grabación o superior a 5 minutos')
     oid=str(uuid.uuid4());dest=DATA/u['org']/'clips'/f'{oid}.mp4';dest.parent.mkdir(parents=True,exist_ok=True)
-    run('ffmpeg','-nostdin','-v','error','-ss',str(start),'-i',rec['path'],'-t',str(end-start),'-c:v','libx264','-preset','ultrafast','-c:a','aac','-y',str(dest))
-    with db() as c:
-        c.execute('INSERT INTO clip VALUES (?,?,?,?,?,?,?,?)',(oid,u['org'],rid,start,end,str(dest),digest(dest),time.time()))
-        audit(c,u,'clip.create',oid)
+    original=rec['path']
+    if client:
+        remote=client.get('recording',rid,u['org'])
+        original=cached_media(client,remote['objeto_original'],remote['sha256'],u['org'],rid,'mp4')
+    run('ffmpeg','-nostdin','-v','error','-ss',str(start),'-i',str(original),'-t',str(end-start),'-c:v','libx264','-preset','ultrafast','-c:a','aac','-y',str(dest))
+    if client:
+        key=f'{u["org"]}/{rid}/clips/{oid}.mp4'
+        client.upload(key,dest,'video/mp4')
+        client.insert('clip',{'id':oid,'organizacion_id':u['org'],'grabacion_id':rid,'inicio':start,
+            'fin':end,'objeto':key,'sha256':digest(dest)})
+        cloud_audit(client,u,'clip.create',oid)
+    else:
+        with db() as c:
+            c.execute('INSERT INTO clip VALUES (?,?,?,?,?,?,?,?)',(oid,u['org'],rid,start,end,str(dest),digest(dest),time.time()))
+            audit(c,u,'clip.create',oid)
     return {'id':oid,'recording_id':rid,'start':start,'end':end,'sha256':digest(dest),'url':f'/api/v1/media/clip/{oid}'}
 
 @app.post('/api/v1/chat')
 async def chat(req:Request):
     u=auth(req);v=await req.json();message=str(v.get('message',''))[:1000].lower();rid=str(v.get('recording_id',''))
-    with db() as c: rec=row(c,'recording',rid,u['org'])
+    if SUPABASE_MODE:rec=cloud_recording(cloud(req).get('recording',rid,u['org']))
+    else:
+        with db() as c: rec=row(c,'recording',rid,u['org'])
     if rec['status']!='ready': return {'intent':'status','answer':'La grabación todavía no está indexada. Estado: '+rec['status'],'items':[]}
     times=[float(x.replace(',','.')) for x in re.findall(r'\b\d+(?:[.,]\d+)?\b',message)]
     clock=re.findall(r'(\d{1,2}):(\d{2}):(\d{2})',message)
@@ -314,14 +409,25 @@ async def chat(req:Request):
     if 'indicador' in message: return {'intent':'metrics','answer':'Consulta los indicadores del panel.','items':[]}
     wants_objects=bool(re.search(r'persona|vehículo|vehiculo|detect|encuentra',message))
     if wants_objects: return {'intent':'objects','window':[start,end],'answer':'No hay detector de personas o vehículos instalado. No se han generado hallazgos. Puedes inspeccionar fotogramas del intervalo.','items':[],'coverage':'Fotogramas muestreados cada 5 segundos; no hay análisis de objetos.'}
-    with db() as c:
-        fs=[{'id':r['id'],'second':r['second'],'sha256':r['sha256'],'url':f'/api/v1/media/frame/{r["id"]}'} for r in c.execute('SELECT * FROM frame WHERE org=? AND recording=? AND second BETWEEN ? AND ? ORDER BY second DESC LIMIT 30',(u['org'],rid,start,end))]
+    if SUPABASE_MODE:
+        from urllib.parse import quote
+        fs=[cloud_frame(f) for f in cloud(req).list('frame',u['org'],filters=f'grabacion_id=eq.{quote(rid)}&segundo=gte.{start}&segundo=lte.{end}',limit=30,order='segundo.desc')]
+    else:
+        with db() as c:
+            fs=[{'id':r['id'],'second':r['second'],'sha256':r['sha256'],'url':f'/api/v1/media/frame/{r["id"]}'} for r in c.execute('SELECT * FROM frame WHERE org=? AND recording=? AND second BETWEEN ? AND ? ORDER BY second DESC LIMIT 30',(u['org'],rid,start,end))]
     return {'intent':'frames','window':[start,end],'answer':f'{len(fs)} fotogramas auténticos del archivo histórico, entre {start:.1f} y {end:.1f} s. No hay hora de captura conocida ni transmisión en vivo.','items':fs,'coverage':'Muestreo aproximado cada 5 segundos.'}
 
 @app.post('/api/v1/cases')
 async def create_case(req:Request):
     u=auth(req);v=await req.json();rid=str(v.get('recording_id',''))
-    require_role(u,'maestro','administrator','supervisor','investigador')
+    require_role(u,*(['maestro'] if SUPABASE_MODE else ['maestro','administrator','supervisor','investigador']))
+    if SUPABASE_MODE:
+        client=cloud(req);client.get('recording',rid,u['org']);oid=str(uuid.uuid4());eid=str(uuid.uuid4())
+        client.insert('cases',{'id':oid,'organizacion_id':u['org'],'titulo':str(v.get('title','Investigación'))[:120],
+            'nota':str(v.get('note',''))[:3000],'estado':'hipótesis'})
+        client.insert('evidence',{'id':eid,'organizacion_id':u['org'],'expediente_id':oid,'grabacion_id':rid})
+        cloud_audit(client,u,'case.create',oid)
+        return {'id':oid,'status':'hipótesis'}
     with db() as c:
         row(c,'recording',rid,u['org']);oid=str(uuid.uuid4());eid=str(uuid.uuid4())
         c.execute('INSERT INTO cases VALUES (?,?,?,?,?,?)',(oid,u['org'],str(v.get('title','Investigación'))[:120],str(v.get('note',''))[:3000],'hipótesis',time.time()))
@@ -331,22 +437,38 @@ async def create_case(req:Request):
 @app.get('/api/v1/cases')
 def cases(req:Request):
     u=auth(req)
+    if SUPABASE_MODE:
+        return [{'id':r['id'],'title':r['titulo'],'note':r['nota'],'status':r['estado'],'created':r['creado_en']}
+                for r in cloud(req).list('cases',u['org'],order='creado_en.desc')]
     with db() as c: return [dict(r) for r in c.execute('SELECT * FROM cases WHERE org=? ORDER BY created DESC',(u['org'],))]
 
 @app.get('/api/v1/cases/{oid}/report')
 def report(req:Request,oid:str):
     u=auth(req)
     from html import escape
-    with db() as c:
-        case=row(c,'cases',oid,u['org'])
-        sources=[dict(r) for r in c.execute('SELECT recording.id,recording.name,recording.sha256,recording.duration FROM evidence JOIN recording ON evidence.recording=recording.id AND evidence.org=recording.org WHERE evidence.case_id=? AND evidence.org=?',(oid,u['org']))]
-        audit(c,u,'report.read',oid)
+    if SUPABASE_MODE:
+        client=cloud(req);item=client.get('cases',oid,u['org'])
+        case={'title':item['titulo'],'note':item['nota'],'status':item['estado']}
+        from urllib.parse import quote
+        evidence=client.list('evidence',u['org'],filters='expediente_id=eq.'+quote(oid))
+        sources=[cloud_recording(client.get('recording',e['grabacion_id'],u['org'])) for e in evidence]
+        cloud_audit(client,u,'report.read',oid)
+    else:
+        with db() as c:
+            case=row(c,'cases',oid,u['org'])
+            sources=[dict(r) for r in c.execute('SELECT recording.id,recording.name,recording.sha256,recording.duration FROM evidence JOIN recording ON evidence.recording=recording.id AND evidence.org=recording.org WHERE evidence.case_id=? AND evidence.org=?',(oid,u['org']))]
+            audit(c,u,'report.read',oid)
     lines=''.join(f'<li>{escape(s["name"])} — SHA-256: {escape(s["sha256"])}; duración {s["duration"]} s</li>' for s in sources)
     return HTMLResponse(f'<html lang="es"><meta charset="utf-8"><title>Informe VIGÍA</title><style>body{{font:17px system-ui;max-width:760px;margin:50px auto;line-height:1.6}}@media print{{body{{margin:15mm}}}}</style><h1>Informe preliminar</h1><p>Expediente: {escape(case["title"])} · Estado: {escape(case["status"])}</p><h2>Notas</h2><p>{escape(case["note"])}</p><h2>Fuentes</h2><ul>{lines}</ul><h2>Método y límites</h2><p>Fotogramas extraídos con FFmpeg cada ~5 segundos. Sin detector de objetos; sin verificación humana de incidentes. Se desconoce la hora de captura original. Este informe no acredita admisibilidad legal.</p><p>Autor de consulta: {escape(u["username"])}</p><button onclick="window.print()">Imprimir o guardar PDF</button></html>')
 
 @app.get('/api/v1/metrics')
 def metrics(req:Request):
     u=auth(req)
+    if SUPABASE_MODE:
+        client=cloud(req)
+        return {'cameras':client.count('camera',u['org']),'recordings':client.count('recording',u['org'],'estado=eq.ready'),
+            'pending':client.count('recording',u['org'],'estado=eq.processing'),'frames':client.count('frame',u['org']),
+            'clips':client.count('clip',u['org']),'cases':client.count('cases',u['org'])}
     with db() as c:
         return {name:c.execute(f'SELECT COUNT(*) FROM {table} WHERE org=?'+condition,(u['org'],)).fetchone()[0] for name,table,condition in [('cameras','camera',''),('recordings','recording'," AND status='ready'"),('pending','recording'," AND status='processing'"),('frames','frame',''),('clips','clip',''),('cases','cases','')]}
 
@@ -372,7 +494,9 @@ async def rename_organization(req:Request):
         supabase_request('PATCH','/rest/v1/vigia_organizaciones?id=eq.'+u['org'],token,{'nombre':name})
     else:
         with db() as c:c.execute('UPDATE org SET name=? WHERE id=?',(name,u['org']))
-    with db() as c:audit(c,u,'org.rename',u['org'])
+    if SUPABASE_MODE:cloud_audit(cloud(req),u,'org.rename',u['org'])
+    else:
+        with db() as c:audit(c,u,'org.rename',u['org'])
     return {'organizacion':name}
 
 @app.get('/')
