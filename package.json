@@ -1,0 +1,22 @@
+{
+  "name": "vigia",
+  "version": "1.0.0",
+  "description": "VIGÍA — plataforma local de monitoreo y análisis de video",
+  "main": "index.js",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node tests/node_nlp.test.cjs && node tests/node_mp4cut.test.cjs && node tests/e2e.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
+    "jspdf": "^4.2.1",
+    "mp4box": "^0.5.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

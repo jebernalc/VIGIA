@@ -1,0 +1,22 @@
+OK  fotogramas cam1 últimos 5 min
+OK  buscar personas/vehículos entre 00:01:00 y 00:03:00 usa selección
+OK  clip -10/+20 del hallazgo
+OK  amplía cinco minutos antes (seguimiento)
+OK  qué sucede ahora cam 2
+OK  movimiento cámaras 1 y 3 última hora
+OK  grupo perímetro hoy
+OK  abrir caso con título
+OK  resumir caso por código
+OK  indicadores
+OK  regla persona cam3 45 min
+OK  cámara inexistente reportada
+OK  falta cámara → aclaración
+OK  seguimiento: ahora solo vehículos
+OK  ventana por minuto y cámara por nombre
+OK  inyección: no hay entidad de organización ni permisos
+OK  listar cámaras
+OK  generar informe
+OK  añadir al caso
+OK  número en palabras (treinta segundos)
+OK  cam 2 media hora
+exit 0

@@ -1,0 +1,17 @@
+OK  app/muestras/muestra_cam01_h264.mp4 duración 200s (200)
+OK  inicio alineado a clave 84
+OK  fin real 115.06666666666666
+OK  ffprobe duración 31.189333 vs 31.066666666666663
+OK  2 pistas h264,aac
+OK  decodifica sin errores 
+OK  primer fotograma idéntico al original (0092885a71be9ab2)
+   hash clip 00da32fa12e8e33d ffmpeg -ss 84.000 -i <original> -t 31.067 -c copy -map 0:v:0 -map 0:a? clip.mp4
+OK  tests/muestra_cam01_vp9.mp4 duración 200s (200)
+OK  inicio alineado a clave 84
+OK  fin real 115
+OK  ffprobe duración 31 vs 31
+OK  2 pistas vp9,opus
+OK  decodifica sin errores 
+OK  primer fotograma idéntico al original (0df49f76e63722fd)
+   hash clip 9ab6f20a11714bbf ffmpeg -ss 84.000 -i <original> -t 31.000 -c copy -map 0:v:0 -map 0:a? clip.mp4
+exit 0

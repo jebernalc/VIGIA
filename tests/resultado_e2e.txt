@@ -1,0 +1,24 @@
+OK  8 credenciales aleatorias generadas
+OK  sesión iniciada, chat como vista principal
+OK  cámara creada con nombre, ubicación y zona horaria
+OK  video importado e indexado asíncronamente con progreso real
+OK  fotogramas reales con cámara y marca temporal (histórico)
+OK  sin IA: declara la limitación sin inventar detecciones
+OK  movimiento encontrado en la ventana
+OK  clip MP4 sin recodificar con hash
+OK  clip descargable (clip_muestra_cam01_vp9_70.00-130.00.mp4)
+OK  consulta de seguimiento
+OK  expediente abierto desde el chat
+OK  informe HTML con fuentes y limitaciones
+OK  informe PDF descargable
+OK  «ahora» devuelve el último cuadro con edad y etiqueta de emulación
+OK  regla con vista previa sin activarse
+OK  alerta disparada por movimiento real en la transmisión emulada
+OK  tablero con totales reales
+OK  auditoría verificada desde la interfaz
+OK  la organización Sur no ve cámaras de Norte
+OK  ni sus hallazgos
+OK  selección de organización al iniciar sesión
+
+Recorrido completo sin errores. Capturas en tests/capturas/
+exit 0

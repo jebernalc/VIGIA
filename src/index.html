@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob: data:; script-src 'self' file: 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' file: blob: data:; media-src 'self' file: blob: data: mediastream:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>VIGÍA · Monitoreo y análisis de video</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M3 20C8 11 13.5 7 20 7s12 4 17 13c-5 9-10.5 13-17 13S8 29 3 20Z' fill='none' stroke='%2319c2ad' stroke-width='3'/%3E%3Ccircle cx='20' cy='20' r='6.5' fill='%2319c2ad'/%3E%3C/svg%3E">
+<!--CSS-->
+</head>
+<body>
+<noscript>VIGÍA requiere JavaScript.</noscript>
+<div style="display:grid;place-items:center;height:100vh;font:14px system-ui;color:#a9b4c0;background:#0c0f13" id="splash">Iniciando VIGÍA…</div>
+<script src="vigia.config.js" onerror="void 0"></script>
+<!--JS-->
+<script>V.app.boot().catch(function (e) { document.body.innerHTML = '<pre style="padding:20px;color:#ef5b5b">Error al iniciar VIGÍA: ' + (e && e.message) + '</pre>'; console.error(e); });</script>
+</body>
+</html>
