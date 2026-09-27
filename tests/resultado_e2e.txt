@@ -16,6 +16,7 @@ OK  regla con vista previa sin activarse
 OK  alerta disparada por movimiento real en la transmisión emulada
 OK  tablero con totales reales
 OK  auditoría verificada desde la interfaz
+OK  pestaña Nube (Supabase) configurada
 OK  la organización Sur no ve cámaras de Norte
 OK  ni sus hallazgos
 OK  selección de organización al iniciar sesión

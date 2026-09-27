@@ -7,6 +7,7 @@ window.VIGIA_CONFIG = {
   maxClipS: 600,              // duración máxima de clip
   sesionHoras: 8,             // expiración de sesión
   urlTTLmin: 10,              // caducidad de las URL de medios
-  pbkdf2Iter: 150000          // iteraciones PBKDF2 para contraseñas
+  pbkdf2Iter: 150000,         // iteraciones PBKDF2 para contraseñas
+  // supabase: { url: 'https://<proyecto>.supabase.co', publishableKey: 'sb_publishable_...' }  // nunca la clave secreta
   // demoPasswords: { 'admin@norte.demo': 'cambie-esto', 'admin@sur.demo': 'cambie-esto' }
 };

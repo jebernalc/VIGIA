@@ -82,6 +82,7 @@ try {
   const kp = await p.locator('.kpi').first().innerText(); ok(/1/.test(kp), 'tablero con totales reales');
   await p.click('[data-nav=admin]'); await p.click('[data-t=auditoria]'); await p.click('#av'); await p.waitForSelector('text=Cadena íntegra'); ok(true, 'auditoría verificada desde la interfaz');
   await shot('auditoria');
+  await p.click('[data-t=nube]'); await p.waitForSelector('text=Iniciar sesión en la nube'); ok(await p.isVisible('text=vxolklytmkenflxevlwq'), 'pestaña Nube (Supabase) configurada'); await shot('nube');
   // otra organización
   await p.click('#lo'); await p.waitForSelector('#lf'); await login('admin@sur.demo');
   await p.click('[data-nav=ops]'); await p.waitForSelector('text=No hay cámaras');

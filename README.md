@@ -13,7 +13,10 @@ Plataforma de monitoreo y análisis de video con chat en español, preservación
 
 ## Acceso de prueba en línea
 
-https://jebernalc2036-ai.github.io/vigia/ (GitHub Pages; los datos se guardan sólo en su navegador)
+**https://jebernalc2036-ai.github.io/vigia/** (GitHub Pages).
+
+- Los videos y el análisis se procesan y guardan **en su navegador**.
+- **Nube (Supabase)**: en Administración → *Nube (Supabase)* puede iniciar sesión y sincronizar metadatos y cadena de custodia (cámaras, grabaciones con SHA-256, hallazgos, clips con hash, expedientes, evidencias, auditoría) con aislamiento por organización (Row Level Security). **Los videos no se suben.** Detalles en `supabase/README.md`.
 
 ## Inicio local (comando exacto)
 
@@ -94,6 +97,7 @@ vigia/
 ├── tests/                     ← pruebas (Node, navegador, e2e) y capturas
 ├── tools/                     ← compilación y generador de video sintético
 ├── docs/                      ← ARCHITECTURE · API · TESTING · CAPACIDADES · PROMPT_MEJORADO
+├── supabase/migrations/       ← esquema de la nube con RLS
 └── .github/workflows/pages.yml ← publicación automática en GitHub Pages
 ```
 

@@ -284,7 +284,7 @@
 
   // ======================= ADMINISTRACIÓN =======================
   const adm = A.views.admin = {};
-  const ATABS = [['camaras', 'Cámaras y grupos'], ['usuarios', 'Usuarios y roles'], ['ia', 'Motor de visión'], ['retencion', 'Retención'], ['auditoria', 'Auditoría'], ['datos', 'Datos y almacenamiento'], ['pruebas', 'Pruebas automáticas'], ['capacidades', 'Capacidades']];
+  const ATABS = [['camaras', 'Cámaras y grupos'], ['usuarios', 'Usuarios y roles'], ['ia', 'Motor de visión'], ['retencion', 'Retención'], ['auditoria', 'Auditoría'], ['nube', 'Nube (Supabase)'], ['datos', 'Datos y almacenamiento'], ['pruebas', 'Pruebas automáticas'], ['capacidades', 'Capacidades']];
   adm.render = async function (m, tab) {
     adm.tab = tab || adm.tab || 'camaras';
     m.innerHTML = `<div class="view"><h1 class="h1" style="margin-bottom:10px">Administración</h1><div class="tabs" id="atabs" style="padding:0;margin-bottom:14px">${ATABS.map(([k, l]) => `<button data-t="${k}" class="${adm.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="abody"></div></div>`;
@@ -370,6 +370,35 @@
       <div style="overflow:auto"><table class="table small"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Recurso</th><th>Detalle</th><th>Hash</th></tr>${r.items.map(a => `<tr><td>${esc(V.fmtDateTime(a.ts))}</td><td>${esc(a.email)}</td><td class="mono">${esc(a.accion)}</td><td class="tiny">${esc(a.recurso)} ${esc(a.recursoId || '')}</td><td class="tiny mono" style="max-width:280px;word-break:break-all">${esc(JSON.stringify(a.detalle))}</td><td class="hash">${esc(a.hash.slice(0, 12))}</td></tr>`).join('')}</table></div></div>`;
     V.$('#av').onclick = async () => { const v = await A.api.verifyAudit(A.token); V.toast(v.ok ? '✓ Cadena íntegra (' + v.registros + ' registros)' : '✗ Cadena rota en ' + v.rotoEn, v.ok ? '' : 'bad'); };
     V.$('#ax').onclick = () => V.downloadBlob(new Blob([JSON.stringify(r.items, null, 2)], { type: 'application/json' }), 'vigia_auditoria.json');
+  };
+  adm.nube = async function (body) {
+    const C = V.cloud;
+    if (!C.configurada()) { body.innerHTML = '<div class="alert-box">Supabase no está configurado. Defina <span class="mono">supabase: { url, publishableKey }</span> en <span class="mono">vigia.config.js</span>.</div>'; return; }
+    await C.sesion().catch(() => null);
+    const head = `<div class="alert-box info small" style="margin-bottom:12px">La nube guarda <b>metadatos y cadena de custodia</b> (cámaras, grabaciones con SHA-256, hallazgos, clips/fotogramas con hash, expedientes, evidencias y auditoría). <b>Los videos no se suben</b>: siguen en este equipo. El aislamiento entre organizaciones en la nube lo aplica PostgreSQL con Row Level Security.<br>Proyecto: <span class="mono">${esc(V.CFG.supabase.url)}</span></div>`;
+    if (!C.user) {
+      body.innerHTML = head + `<div class="card" style="max-width:480px"><h2 class="h2">Iniciar sesión en la nube</h2><div class="col" style="margin-top:10px"><label class="f">Correo<input type="email" id="ne" autocomplete="username"></label><label class="f">Contraseña (mín. 8)<input type="password" id="np" autocomplete="current-password"></label>
+        <div class="row"><button class="btn pri" id="nin">Entrar</button><button class="btn" id="nreg">Crear cuenta</button></div><div id="nmsg" class="small"></div></div></div>`;
+      const go = async reg => { const m = V.$('#nmsg'); m.textContent = '…'; try { const e = V.$('#ne').value.trim(), p = V.$('#np').value; if (p.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres'); if (reg) { const r = await C.registrar(e, p); if (r.requiereConfirmacion) { m.innerHTML = '<span style="color:var(--warn)">Revise su correo y confirme la cuenta; luego inicie sesión.</span>'; return; } } else await C.entrar(e, p); adm.render(V.$('#main'), 'nube'); } catch (err) { m.innerHTML = '<span style="color:var(--bad)">' + esc(V.errMsg(err)) + '</span>'; } };
+      V.$('#nin').onclick = () => go(false); V.$('#nreg').onclick = () => go(true); return;
+    }
+    let orgs = []; try { orgs = await C.organizaciones(); } catch (e) { body.innerHTML = head + '<div class="alert-box bad">' + esc(V.errMsg(e)) + '</div>'; return; }
+    if (!C.orgId || !orgs.find(o => o.id === C.orgId)) C.orgId = orgs[0] ? orgs[0].id : null;
+    const cur = orgs.find(o => o.id === C.orgId);
+    const cnt = cur ? await C.conteos(cur.id).catch(() => null) : null;
+    body.innerHTML = head + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr))">
+      <div class="card"><div class="row"><h2 class="h2 grow">Cuenta en la nube</h2><button class="btn sm" id="nout">Cerrar sesión de la nube</button></div><p class="small">${esc(C.user.email)}</p>
+        <label class="f">Organización en la nube<select id="norg">${orgs.map(o => `<option value="${o.id}" ${o.id === C.orgId ? 'selected' : ''}>${esc(o.nombre)} · ${esc(o.rol || '')}</option>`).join('') || '<option value="">(ninguna)</option>'}</select></label>
+        <div class="row" style="margin-top:8px"><input type="text" id="nnew" placeholder="Nueva organización" class="grow"><button class="btn sm" id="ncre">${I.plus} Crear</button></div>
+        ${cur && cur.rol === 'admin' ? `<div class="row" style="margin-top:8px"><input type="email" id="nme" placeholder="correo de un usuario registrado" class="grow"><select id="nmr">${Object.entries(V.ROLES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select><button class="btn sm" id="nadd">Agregar miembro</button></div>` : ''}</div>
+      <div class="card"><h2 class="h2">Sincronización</h2><p class="small tx2">Envía los datos de <b>${esc(A.session.orgNombre)}</b> (local) a <b>${cur ? esc(cur.nombre) : '—'}</b> (nube). Se puede repetir: actualiza sin duplicar; la auditoría sólo se agrega.</p>
+        <button class="btn pri" id="nsync" ${cur ? '' : 'disabled'}>Sincronizar ahora</button><div class="prog" style="margin-top:8px"><i id="nprog" style="width:0"></i></div><div id="nres" class="small" style="margin-top:6px"></div>
+        ${cnt ? `<table class="table small" style="margin-top:10px"><tr><th>En la nube</th><th>Registros</th></tr>${Object.entries(cnt).filter(([k]) => k !== 'ultima').map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')}<tr><td>Última sincronización</td><td>${cnt.ultima ? esc(V.fmtDateTime(Date.parse(cnt.ultima))) : 'nunca'}</td></tr></table>` : ''}</div></div>`;
+    V.$('#nout').onclick = async () => { await C.salir(); adm.render(V.$('#main'), 'nube'); };
+    V.$('#norg').onchange = e => { C.orgId = e.target.value; adm.render(V.$('#main'), 'nube'); };
+    V.$('#ncre').onclick = async () => { try { const n = V.$('#nnew').value.trim(); if (n.length < 2) return V.toast('Escriba un nombre', 'warn'); C.orgId = await C.crearOrganizacion(n); V.toast('Organización creada en la nube'); adm.render(V.$('#main'), 'nube'); } catch (e) { V.fail(e); } };
+    if (V.$('#nadd')) V.$('#nadd').onclick = async () => { try { await C.agregarMiembro(C.orgId, V.$('#nme').value.trim(), V.$('#nmr').value); V.toast('Miembro agregado'); } catch (e) { V.fail(e); } };
+    V.$('#nsync').onclick = async () => { const b = V.$('#nsync'); b.disabled = true; try { const r = await C.sincronizar(A.api, A.token, C.orgId, (p, k) => { V.$('#nprog').style.width = Math.round(p * 100) + '%'; V.$('#nres').textContent = 'Enviando ' + k + '…'; }); V.toast('Sincronización completa'); V.$('#nres').textContent = Object.entries(r).map(([k, v]) => v + ' ' + k).join(' · '); setTimeout(() => adm.render(V.$('#main'), 'nube'), 800); } catch (e) { V.fail(e); V.$('#nres').textContent = V.errMsg(e); } b.disabled = false; };
   };
   adm.datos = async function (body) {
     let est = null; try { est = await navigator.storage.estimate(); } catch (_) { }

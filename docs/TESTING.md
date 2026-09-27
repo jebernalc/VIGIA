@@ -13,6 +13,7 @@ node tests/node_mp4cut.test.cjs      # corte MP4 sin recodificar, validado con f
 node tests/run_suite.mjs [--ia]      # suite interna en Chromium sin interfaz (file://)
 node tests/e2e.mjs                   # recorrido completo a través de la interfaz
 node tests/webcam.mjs                # adaptador de cámara web con dispositivo simulado
+node tests/cloud.mjs                 # sincronización con Supabase (cliente simulado, sin red)
 ```
 
 El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado porque ese binario no incluye H.264; la muestra H.264 que se entrega al usuario se reproduce en Chrome/Edge/Safari normales.
@@ -25,6 +26,7 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 | Corte MP4 (Node + ffprobe) | **14/14** (H.264/AAC y VP9/Opus: duración, 2 pistas, decodificación sin errores, primer fotograma idéntico al original) | 2 s |
 | Suite interna en navegador | **16/16** correctas (incluida IA) | 213 s (IA en WebGL por software) |
 | Recorrido por interfaz (e2e) | **21/21** comprobaciones | ≈ 2 min |
+| Nube Supabase (cliente simulado + SQL real) | 8/8 sincronización · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
 | Cámara web simulada | primer cuadro 1,19 s · edad 0,6 s · búfer 12 s · clip de contexto 705 KB | 13 s |
 
 ### Suite interna (qué se comprueba)

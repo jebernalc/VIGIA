@@ -24,6 +24,7 @@ window.V.CAPACIDADES = [
   ['Tablero de indicadores con totales reales', 'v', ''],
   ['Auditoría encadenada por hash y detección de alteraciones', 'v', ''],
   ['Retención configurable y protección de evidencia en expedientes', 'p', 'Borrado manual respeta protección; borrado programado: fase posterior.'],
+  ['Nube Supabase: cuentas, organizaciones con RLS y sincronización de metadatos/custodia', 'p', 'Esquema y RLS verificados con SQL; sincronización probada con cliente simulado y validación del esquema. Los videos no se suben.'],
   ['Conexión RTSP', 'f', 'Un navegador no abre RTSP: requiere agente de borde (ARCHITECTURE.md).'],
   ['Servidor multiusuario (FastAPI + PostgreSQL + cola distribuida)', 'f', 'Diseñado en ARCHITECTURE.md / API.md; esta entrega es la edición local.'],
   ['Búsqueda semántica con embeddings visuales', 'f', 'No implementada: no se ofrece en la interfaz.'],

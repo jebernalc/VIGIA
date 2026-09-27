@@ -27,6 +27,7 @@ Estados: **Implementado y verificado** (prueba automática) · **Implementado, v
 | Tablero de indicadores con totales reales | Implementado y verificado |  |
 | Auditoría encadenada por hash y detección de alteraciones | Implementado y verificado |  |
 | Retención configurable y protección de evidencia en expedientes | Implementado, verificación parcial | Borrado manual respeta protección; borrado programado: fase posterior. |
+| Nube Supabase: cuentas, organizaciones con RLS y sincronización de metadatos/custodia | Implementado, verificación parcial | Esquema y RLS verificados con SQL; sincronización probada con cliente simulado y validación del esquema. Los videos no se suben. |
 | Conexión RTSP | Fase posterior | Un navegador no abre RTSP: requiere agente de borde (ARCHITECTURE.md). |
 | Servidor multiusuario (FastAPI + PostgreSQL + cola distribuida) | Fase posterior | Diseñado en ARCHITECTURE.md / API.md; esta entrega es la edición local. |
 | Búsqueda semántica con embeddings visuales | Fase posterior | No implementada: no se ofrece en la interfaz. |

@@ -7,6 +7,12 @@ window.VIGIA_CONFIG = {
   maxClipS: 600,              // duración máxima de clip
   sesionHoras: 8,             // expiración de sesión
   urlTTLmin: 10,              // caducidad de las URL de medios
-  pbkdf2Iter: 150000          // iteraciones PBKDF2 para contraseñas
+  pbkdf2Iter: 150000,         // iteraciones PBKDF2 para contraseñas
+  // Nube (Supabase). La clave PUBLICABLE es segura en el navegador: el acceso lo controla RLS en PostgreSQL.
+  // Nunca ponga aquí la clave secreta (service_role / sb_secret_...).
+  supabase: {
+    url: 'https://vxolklytmkenflxevlwq.supabase.co',
+    publishableKey: 'sb_publishable_cvKc8D6KrAzmBFybTAKTjg_FhI4kPOB'
+  }
   // demoPasswords: { 'admin@norte.demo': 'cambie-esto', 'admin@sur.demo': 'cambie-esto' }
 };
