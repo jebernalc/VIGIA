@@ -3,7 +3,7 @@
 Aplicación experimental de investigación de video histórico en español. Requiere Python 3.11+, FFmpeg y FFprobe. El servidor sirve el frontend y la API desde el mismo origen.
 
 ```bash
-cd vigia
+cd VIGIA
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -25,3 +25,9 @@ ffmpeg -f lavfi -i testsrc=size=640x360:rate=10 -t 20 -pix_fmt yuv420p sample.mp
 Los originales reciben hash SHA-256 y se guardan aparte de fotogramas y clips. Los segundos representan posición dentro del archivo; **no hay hora de captura inferida**. Cada consulta por objetos responde honestamente que falta detector. No existen RTSP, reglas, alertas ni procesamiento de flujos en vivo todavía. El tamaño máximo de carga es 250 MB, duración máxima de 2 horas y la extracción máxima de clip 5 minutos.
 
 Mejoras prioritarias: sesiones persistentes y revocables; cuotas por cliente; validación rigurosa del contenedor/códecs y aislamiento del proceso FFmpeg; trabajos persistentes con reintentos; detector CPU optativo y su evaluación; permisos por rol y cámara; conservación probatoria y retención configurables; RTSP/ONVIF y búfer de eventos en un agente de borde. Consulte `ARCHITECTURE.md`.
+
+## Publicación de demostración
+
+El repositorio incluye `Dockerfile` y `render.yaml` para crear un servicio web en Render mediante su opción de Blueprint. El servicio instala FFmpeg y publica la API y la interfaz en un mismo origen. Las variables `VIGIA_PASSWORD_A` y `VIGIA_PASSWORD_B` se generan en el panel de alojamiento; obtén allí sus valores para entrar con `operador-a` y `operador-b`. No coloques contraseñas en GitHub.
+
+La modalidad gratuita puede suspenderse cuando no se usa y su disco local es temporal: los videos, expedientes y bases de datos pueden perderse durante reinicios o redespliegues. Esta publicación sirve **solo para ensayos con video sintético**. Una operación institucional necesita disco persistente u objetos privados, base de datos gestionada, gestión robusta de usuarios y endurecimiento de la API antes de cargar imágenes sensibles.
