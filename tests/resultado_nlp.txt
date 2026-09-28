@@ -28,4 +28,8 @@ OK  manipulación de cámara
 OK  objeto abandonado
 OK  regla de puerta abierta
 OK  conteo de salidas de vehículos
-exit 0
+OK  regla con horario nocturno entre semana (7 días)
+OK  regla nocturna con vigencia explícita
+OK  sinopsis de video
+OK  búsqueda por apariencia
+OK  estado de la central de alarmas

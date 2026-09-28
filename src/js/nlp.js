@@ -106,6 +106,9 @@
     // ---- intención ----
     if (has(/^(ayuda|help|\?)$|\bque puedes hacer\b|\bcomo te uso\b|\bcomandos\b|\bejemplos\b/)) plan.intent = 'ayuda';
     else if (has(/\b(avisame|alertame|notificame|alerta si|avisar si|vigila si|vigilar si|crea(r)? una regla|regla)\b/)) plan.intent = 'regla';
+    else if (has(/\b(sinopsis|resumen de(l)? video|video resumido|resume el video|condensa(r)? el video|resumen visual)\b/)) plan.intent = 'sinopsis';
+    else if (has(/\b(parecid[oa]s?|similares?|misma ropa|mismo aspecto|misma apariencia|apariencia similar|vestid[oa]s? igual)\b/)) plan.intent = 'similares';
+    else if (has(/\balarmas?\b/) || has(/\bcentral de (alarmas|monitoreo)\b/)) plan.intent = 'alarmas';
     else if (esSeguimiento && plan.clases.length) { plan.intent = (est.ultimoIntent === 'fotogramas' || !est.ultimoIntent) ? 'buscar' : est.ultimoIntent; plan.supuestos.push('Consulta de seguimiento: se reutilizan cámara y ventana anteriores con las nuevas clases.'); plan.seguimiento = true; }
     else if (has(/\b(amplia|ampliar|extiende|extender|agranda)\b/) || has(/^(y )?(\d+(?:[.,]\d+)?)\s*(segundos?|minutos?|horas?)\s+(mas\s+)?(antes|despues)\b/)) plan.intent = 'ampliar';
     else if (has(/\b(resume|resumen|resumir|estado del?)\b.*\b(caso|expediente)\b/)) plan.intent = 'resumir_caso';
@@ -169,12 +172,24 @@
       const md = t.match(/\b(?:durante|por|en los proximos|las proximas|los proximos|proximos|proximas)\s+(\d+(?:[.,]\d+)?)\s*(minutos?|min|m|horas?|h)\b/);
       const clase = plan.clases.find(c => ['persona', 'vehiculo', 'movimiento', 'puerta_abierta', 'humo', 'mal_parqueado', 'merodeo', 'intrusion', 'objeto_abandonado', 'manipulacion', 'aglomeracion', 'ingreso_grupal'].includes(c)) || null;
       plan.regla = { clase, duracionMin: md ? parseFloat(md[1].replace(',', '.')) * UNIT(md[2]) / 60 : 30, destinatario: /\bsupervisor/.test(t) ? 'rol:supervisor' : /\ba mi\b|\bme\b|\bavisame|alertame|notificame/.test(t) ? 'yo' : 'rol:supervisor' };
-      if (!md) plan.supuestos.push('Sin duración indicada: la regla dura 30 minutos.');
+      // horario de vigilancia recurrente: «de 22:00 a 06:00», «entre las 22 y las 6», «de noche», «fines de semana»
+      const hh = x => { const m = String(x).match(/^(\d{1,2})(?::(\d{2}))?/); return m && +m[1] < 24 ? String(+m[1]).padStart(2, '0') + ':' + (m[2] || '00') : null; };
+      const mh = t.match(/\b(?:de|entre|desde)\s+(?:las\s+)?(\d{1,2}(?::\d{2})?)\s*(?:h|hrs?)?\s+(?:a|y|hasta)\s+(?:las\s+)?(\d{1,2}(?::\d{2})?)\b/);
+      let horario = null;
+      if (mh && hh(mh[1]) && hh(mh[2]) && hh(mh[1]) !== hh(mh[2])) horario = { desde: hh(mh[1]), hasta: hh(mh[2]) };
+      else if (/\b(de noche|en la noche|nocturn[oa]|por la noche)\b/.test(t)) horario = { desde: '22:00', hasta: '06:00' };
+      else if (/\bfuera de(l)? horario( laboral)?\b/.test(t)) horario = { desde: '19:00', hasta: '07:00' };
+      if (horario) {
+        horario.dias = /\b(de lunes a viernes|entre semana|dias habiles|laborables)\b/.test(t) ? [1, 2, 3, 4, 5] : /\bfines? de semana\b/.test(t) ? [0, 6] : [0, 1, 2, 3, 4, 5, 6];
+        plan.regla.horario = horario; plan.ventana = null;
+        if (!md) { plan.regla.duracionMin = 7 * 24 * 60; plan.supuestos.push('Regla con horario sin vigencia indicada: queda activa 7 días en esa franja.'); }
+      } else if (!md) plan.supuestos.push('Sin duración indicada: la regla dura 30 minutos.');
       if (!clase) plan.faltantes.push('clase_regla');
     }
 
     // ---- faltantes y supuestos ----
-    const necesitaCam = ['fotogramas', 'buscar', 'ahora', 'regla', 'conteo'].includes(plan.intent);
+    if (plan.intent === 'similares') plan.referencia = { hallazgo: ctx.hallazgoSeleccionado || est.ultimoHallazgoId || null };
+    const necesitaCam = ['fotogramas', 'buscar', 'ahora', 'regla', 'conteo', 'sinopsis'].includes(plan.intent);
     if (necesitaCam && !plan.camaras.length) plan.faltantes.push('camara');
     if (plan.camarasOrigen === 'seleccion') plan.supuestos.push('No se mencionó cámara: se usa la selección actual del panel.');
     if (plan.camarasOrigen === 'contexto') plan.supuestos.push('Se reutilizan las cámaras de la consulta anterior.');

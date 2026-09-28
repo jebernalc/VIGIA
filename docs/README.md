@@ -51,6 +51,18 @@ Las contraseñas se pueden fijar para demostraciones copiando `vigia.config.exam
 
 Menú **Analítica y casos de uso** → «Cargar demostración de casos de uso». La demostración incluye 12 casos activos: conteo de entradas y salidas, ingreso en grupo, intrusión, merodeo, aglomeración, vehículo mal estacionado, puerta abierta, objeto abandonado, manipulación de cámara, color de prenda, mapa de calor y humo (experimental). Todos se verificaron con IA real sobre un video con guion conocido. Detalle en `docs/CASOS_DE_USO.md`; guion para la alta dirección en `docs/ESTADO_PRESENTACION.md`.
 
+## Funciones avanzadas (v1.1)
+
+- **Central de alarmas**: prioridad, SLA con cuenta regresiva, procedimiento (SOP), asignación, cierre con resolución y métricas MTTA/MTTR/SLA. Cualquier hallazgo se puede «escalar».
+- **Plano del sitio**: cámaras con orientación y campo de visión; color por estado y alarmas abiertas.
+- **Sinopsis de video**: horas de actividad condensadas con la hora real de cada objeto (botón «sinopsis» o «sinopsis de la cámara 2» en el chat).
+- **Búsqueda por apariencia**: botón «parecidos» en una persona seguida (ropa, no biometría).
+- **Privacidad**: «versión con privacidad» de un clip (personas pixeladas) y modo privacidad en el paquete.
+- **Paquete de evidencia**: ZIP con manifiesto, `SHA256SUMS.txt` (`sha256sum -c`), cadena de custodia e informe.
+- **Horarios**: «avísame si hay intrusión en la cámara 2 de 22:00 a 06:00 de lunes a viernes».
+
+Detalle y comparación con el mercado en `docs/FUNCIONES_AVANZADAS.md`.
+
 ## Recorrido en 3 minutos
 
 1. **Centro de operaciones → Cargar video de demostración.** Crea la cámara «Parqueadero norte (demo)» y abre la importación con el video sintético de 3 min 20 s (marque «Analizar con motor IA» para detectar personas). Verá el SHA-256 y el progreso real de la indexación.

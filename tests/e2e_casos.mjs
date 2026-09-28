@@ -43,6 +43,48 @@ try {
   await p.click('[data-nav=analitica]'); await p.waitForSelector('#vcfg'); await p.click('#vcfg'); await p.waitForSelector('#aebox'); await p.waitForTimeout(800); await shot('editor');
   ok(await p.locator('#aelist .badge').count() === 5, 'editor muestra 3 zonas, 1 línea y 1 puerta');
   await p.click('.modal [data-x]');
+  // ---- funciones avanzadas ----
+  await p.click('[data-nav=chat]'); await p.waitForSelector('#ci');
+  t = await ask('sinopsis del salón'); ok(/sinopsis muestra a la vez/.test(t), 'chat: sinopsis de video');
+  await p.locator('.msg.v').last().locator('[data-pro=sinopsis]').click(); await p.waitForSelector('#sgen'); await p.click('#sgen');
+  await p.waitForSelector('#swrap:not([hidden])', { timeout: 180000 }); await p.waitForTimeout(400);
+  const sres = await p.textContent('#sres'); console.log('   ', sres); ok(/objeto\(s\)/.test(sres) && /condensados/.test(sres), 'sinopsis generada con compresión del tiempo');
+  await p.click('#splay'); await p.waitForTimeout(1500); await shot('sinopsis');
+  await p.click('#spng'); await p.waitForSelector('text=Imagen guardada', { timeout: 30000 }); ok(true, 'imagen estroboscópica guardada como derivado con hash');
+  await p.click('.modal [data-x]');
+  t = await ask('persona vestida de naranja');
+  const sim = p.locator('.msg.v').last().locator('[data-pro=similar]').first();
+  ok(await sim.count() > 0, 'las personas seguidas tienen firma de apariencia (botón «parecidos»)');
+  await sim.click(); await p.waitForSelector('#simres .small', { timeout: 30000 }); await p.waitForTimeout(600); await shot('apariencia');
+  const simTxt = await p.textContent('#simres'); console.log('   ', simTxt.slice(0, 120)); ok(/persona\(s\) seguidas/.test(simTxt), 'búsqueda por apariencia en todas las cámaras');
+  await p.click('.modal [data-x]');
+  await p.locator('.msg.v').last().locator('[data-pro=escalar]').first().click(); await p.waitForSelector('text=Enviado a la central de alarmas');
+  await p.locator('.msg.v').last().locator('[data-act=sel-h]').first().click();
+  t = await ask('abre un caso "Demostración alta dirección" con este hallazgo'); ok(/EXP-/.test(t), 'expediente abierto desde el chat');
+  t = await ask('extrae un clip desde 3 segundos antes hasta 3 segundos después de este hallazgo'); ok(/[Cc]lip/.test(t), 'clip del hallazgo');
+  await p.locator('.msg.v').last().locator('[data-pro=privacidad]').first().click(); await p.click('.modal .btn.pri');
+  await p.waitForSelector('text=Clip con privacidad guardado', { timeout: 180000 }); ok(true, 'versión del clip con personas pixeladas (derivado con hash propio)');
+  await p.click('[data-act=tab][data-tab=clips]').catch(() => { }); await p.waitForTimeout(800); await shot('clip_privacidad');
+  // central de alarmas
+  await p.click('[data-nav=alarmas]'); await p.waitForSelector('.alrow'); await p.click('.alrow'); await p.waitForSelector('[data-alop=reconocer]');
+  await p.click('[data-alop=reconocer]'); await p.waitForSelector('#alsop input:not([disabled])'); await p.locator('#alsop input').first().check(); await p.waitForTimeout(400);
+  await shot('central_alarmas');
+  await p.click('[data-alop=cerrar]'); await p.selectOption('#acr', 'prueba'); await p.click('.modal .btn.pri'); await p.waitForSelector('text=Cerrada como');
+  const kpA = await p.$$eval('#alk .kpi', els => els.map(e => e.innerText.replace(/\n/g, ' '))); console.log('   ', kpA.join(' | '));
+  ok(kpA.some(k => /Cumplimiento SLA 100%/.test(k)), 'SLA cumplido y métricas de la central');
+  // plano del sitio
+  await p.click('[data-nav=plano]'); await p.waitForSelector('#pled'); await p.click('#pled'); await p.waitForSelector('#plside');
+  await p.locator('.card .alrow').first().click(); await p.waitForSelector('#plponer'); await p.click('#plponer'); await p.waitForSelector('.plcam'); await p.waitForTimeout(400);
+  await shot('plano'); ok(await p.locator('.plcam').count() === 1, 'cámara ubicada en el plano con su campo de visión');
+  // expediente: versión con privacidad del clip y paquete verificable
+  await p.click('[data-nav=expedientes]'); await p.waitForSelector('#elist [data-c]'); await p.click('#elist [data-c]'); await p.waitForSelector('[data-pro=paquete]');
+  await p.click('[data-pro=paquete]'); await p.waitForSelector('#pko');
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 120000 }), p.click('.modal .btn.pri')]);
+  const zipPath = path.join(shots, 'paquete_prueba.zip'); await dl.saveAs(zipPath);
+  await p.waitForSelector('text=Paquete generado'); await shot('paquete'); await p.click('.modal [data-x]');
+  const { execFileSync } = await import('child_process');
+  const ver = execFileSync('python3', ['-c', 'import zipfile,hashlib,sys\nz=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None\nsums=[l.split("  ",1) for l in z.read("SHA256SUMS.txt").decode().splitlines() if l]\nbad=[n for h,n in sums if hashlib.sha256(z.read(n)).hexdigest()!=h]\nprint(len(sums),"archivos verificados",len(bad),"errores")\nsys.exit(1 if bad else 0)', zipPath]).toString().trim();
+  console.log('   ', ver); ok(/0 errores/.test(ver), 'paquete ZIP íntegro: todos los SHA-256 de SHA256SUMS coinciden');
   console.log('\nCasos de uso verificados por la interfaz.');
 } catch (e) { console.error(e.message); await shot('error'); process.exitCode = 1; }
 const reales = errs.filter(e => !/ERR_FILE_NOT_FOUND/.test(e)); if (reales.length) { console.log('Errores:\n' + reales.join('\n')); process.exitCode = 1; }

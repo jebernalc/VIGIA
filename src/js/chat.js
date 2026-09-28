@@ -276,12 +276,34 @@
         card({ tipo: 'indicadores', m }); break;
       }
       case 'regla': {
-        if (plan.faltantes.includes('clase_regla')) { say('Las reglas soportan: persona, vehículo o movimiento. ¿Cuál quiere vigilar?'); break; }
+        if (plan.faltantes.includes('clase_regla')) { say('Las reglas soportan: persona, vehículo, movimiento y los casos de uso de analítica (intrusión, merodeo, puerta abierta, vehículo mal estacionado, aglomeración, objeto abandonado, manipulación de cámara, humo experimental, ingreso en grupo). ¿Cuál quiere vigilar?'); break; }
         const cam = camById(plan.camaras[0]);
-        const req = plan.regla.clase !== 'movimiento' && V.ia.estado !== 'listo';
-        say('Vista previa de regla (NO activa aún): avisar en la aplicación si se detecta ' + plan.regla.clase + ' en la cámara ' + cam.numero + ' durante ' + plan.regla.duracionMin + ' min. ' + (req ? '⚠ El motor IA no está cargado: la regla no podrá dispararse para «' + plan.regla.clase + '» hasta cargarlo. ' : '') + 'Requiere transmisión activa (vivo o emulación) para evaluarse. Confirme para activarla.');
-        card({ tipo: 'regla_preview', cameraId: cam.id, clase: plan.regla.clase, duracionMin: plan.regla.duracionMin, destinatario: plan.regla.destinatario, advertencia: req });
+        const tipoAn = V.analitica && V.analitica.TIPOS[plan.regla.clase]; const req = V.ia.estado !== 'listo' && (tipoAn ? !!tipoAn.ia : plan.regla.clase !== 'movimiento');
+        const hz = plan.regla.horario ? V.horario.validar(plan.regla.horario) : null; const dm = plan.regla.duracionMin;
+        say('Vista previa de regla (NO activa aún): avisar en la aplicación si se detecta ' + plan.regla.clase + ' en la cámara ' + cam.numero + (hz ? ' en horario ' + V.horario.texto(hz) + ' (hora de la cámara, ' + cam.tz + '), vigente ' + (dm >= 1440 ? Math.round(dm / 1440) + ' día(s)' : dm + ' min') : ' durante ' + dm + ' min') + '. ' + (req ? '⚠ El motor IA no está cargado: la regla no podrá dispararse para «' + plan.regla.clase + '» hasta cargarlo. ' : '') + 'Requiere transmisión activa (vivo o emulación) para evaluarse. Confirme para activarla.');
+        card({ tipo: 'regla_preview', cameraId: cam.id, clase: plan.regla.clase, duracionMin: plan.regla.duracionMin, destinatario: plan.regla.destinatario, advertencia: req, horario: hz });
         break;
+      }
+      case 'sinopsis': {
+        const recs = [];
+        for (const cid of plan.camaras) { const rs = (await api.listRecordings(token, cid)).filter(r => r.indexado && (r.motores || []).some(m => m.startsWith('coco'))); if (rs.length) recs.push(rs.sort((a, b) => b.importadoEn - a.importadoEn)[0]); }
+        if (!recs.length) { say('Para la sinopsis necesito una grabación analizada con el motor IA (personas y vehículos con seguimiento) en ' + (plan.camaras.length > 1 ? 'esas cámaras' : 'esa cámara') + '. Cargue el motor IA y use «analizar con IA» en la grabación.'); break; }
+        say('La sinopsis muestra a la vez todos los objetos que pasaron, cada uno con su hora real; al hacer clic en uno se abre el momento original. Es un derivado sintético para revisión rápida, no evidencia original.');
+        recs.forEach(r => card({ tipo: 'sinopsis', recordingId: r.id, cameraId: r.cameraId })); break;
+      }
+      case 'similares': {
+        const h = plan.referencia && plan.referencia.hallazgo ? await api.getFinding(token, plan.referencia.hallazgo).catch(() => null) : null;
+        if (!h) { say('Indique la persona de referencia: pulse «usar en chat» en un hallazgo de persona seguida, o use el botón «parecidos» de la tarjeta.'); break; }
+        if (!h.firma) { say('El hallazgo de referencia («' + h.etiqueta + '») no tiene firma de apariencia. Sólo las personas seguidas por el motor IA la tienen; reanalice la grabación con IA.'); break; }
+        const r = await api.searchAppearance(token, { findingId: h.id, umbral: 0.8, limit: 12 });
+        say('Encontré ' + r.total + ' persona(s) con ropa similar a «' + h.etiqueta + '» (umbral 80 %, ' + r.candidatos + ' candidatas en todas las cámaras). No es reconocimiento facial: compare visualmente.');
+        if (r.items.length) card({ tipo: 'hallazgos', ids: r.items.map(f => f.id), similitud: Object.fromEntries(r.items.map(f => [f.id, f.similitud])), cobertura: [], clases: ['persona'] });
+        break;
+      }
+      case 'alarmas': {
+        const st = await api.alarmStats(token);
+        say('Central de alarmas: ' + st.abiertas + ' abierta(s) (' + (st.porEstado.nueva || 0) + ' sin reconocer, ' + st.vencidas + ' con SLA vencido) de ' + st.total + ' en total. ' + (st.mttaS != null ? 'Tiempo medio de reconocimiento ' + st.mttaS + ' s. ' : '') + (st.cumplimientoSLA != null ? 'Cumplimiento de SLA ' + Math.round(st.cumplimientoSLA * 100) + ' %. ' : '') + (st.tasaFalsas != null ? 'Falsas alarmas ' + Math.round(st.tasaFalsas * 100) + ' % de las cerradas.' : ''));
+        card({ tipo: 'alarmas', st }); break;
       }
       default:
         say('No reconocí la solicitud. Pruebe, por ejemplo: «muéstrame fotogramas de cámara 1 en los últimos 5 minutos disponibles», «encuentra personas entre 00:01:00 y 00:03:00», «extrae un clip de este hallazgo», «abre un caso», «indicadores».');

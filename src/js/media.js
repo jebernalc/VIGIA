@@ -12,6 +12,7 @@
     v.muted = true; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
     const url = URL.createObjectURL(blob); v.src = url;
     v._url = url;
+    try {
     await new Promise((res, rej) => {
       const to = setTimeout(() => rej(new V.VigiaError('DECODIFICACION', 'El navegador no pudo abrir el video (tiempo agotado).')), 20000);
       v.onloadedmetadata = () => { clearTimeout(to); res(); };
@@ -21,6 +22,7 @@
       await new Promise(res => { const to = setTimeout(res, 5000); v.ondurationchange = () => { if (isFinite(v.duration)) { clearTimeout(to); res(); } }; v.currentTime = 1e7; });
       await M.seek(v, 0);
     }
+    } catch (e) { M.closeVideo(v); throw e; }
     return v;
   };
   M.closeVideo = v => { try { v.pause(); v.removeAttribute('src'); v.load(); URL.revokeObjectURL(v._url); } catch (_) { } };
@@ -58,6 +60,7 @@
     }
     const v = await M.openVideo(blob);
     out.duracion = out.duracion || v.duration; out.ancho = out.ancho || v.videoWidth; out.alto = out.alto || v.videoHeight;
+    if (!isFinite(out.duracion) || out.duracion <= 0) { M.closeVideo(v); throw new V.VigiaError('DURACION', 'No se pudo determinar la duración del video. Reexpórtelo como MP4 (o WebM con índice de duración).'); }
     if (!out.codec) out.codec = contenedor === 'webm' ? 'webm (VP8/VP9/AV1)' : 'desconocido';
     M.closeVideo(v);
     return out;
@@ -159,12 +162,14 @@
   W.start = function (api) {
     if (W.api) return; W.api = api; W.h = api._workerHandle();
     W.h.resetStuck().then(() => W.kick());
-    V.on('jobs:changed', () => W.kick());
+    V.on('jobs:changed', () => W.kick().catch(e => console.error(e)));
   };
+  // Si llega un aviso mientras el bucle trabaja, se repite la consulta de la cola (evita trabajos «pendientes» huérfanos)
   W.kick = async function () {
-    if (W.activo) return; W.activo = true;
+    if (W.activo) { W.otra = true; return; }
+    W.activo = true;
     try {
-      let job; while ((job = await W.h.nextJob())) await W.run(job);
+      do { W.otra = false; let job; while ((job = await W.h.nextJob())) await W.run(job); } while (W.otra);
     } finally { W.activo = false; }
   };
   W.run = async function (job, handle) {
@@ -202,7 +207,7 @@
       v = await M.openVideo(blob);
       const paso = rec.duracion > 3600 ? 2 : 1; // perfil estándar: 1 fps (2 s en archivos > 1 h)
       const md = new MotionDetector(cam ? cam.mascaras : []);
-      const motor = hacerAna ? new AN.Motor(cam) : null;
+      const motor = hacerAna ? new AN.Motor(cam, { horaInicio: rec.horaInicio, tz: (cam && cam.tz) || rec.tz }) : null;
       const frames = []; const dets = [];
       const byT = new Map(existentes.map(f => [f.t, f]));
       const N = Math.floor(rec.duracion / paso) + 1;
@@ -244,6 +249,8 @@
         }
       }
       await db.putMany('frames', frames);
+      // una nueva pasada de IA sustituye a la anterior (evita duplicar detecciones y, con ello, pistas y conteos)
+      if (usarIA) for (const d of await db.by('detections', 'recordingId', rec.id)) if (d.motor && d.motor.startsWith('coco')) await db.del('detections', d.id);
       await db.putMany('detections', dets);
       // 3) hallazgos sugeridos
       await h.update(job, { etapa: 'agrupando hallazgos y eventos', progreso: 0.93 });
@@ -253,7 +260,7 @@
         // reemplazar resultados previos de analítica (sólo los no revisados y no vinculados a expedientes)
         const evid = new Set((await db.by('evidence', 'org', job.org)).map(e => e.refId));
         for (const f of await db.by('findings', 'recordingId', rec.id)) {
-          const reemplazable = f.estado === 'sugerido' && !evid.has(f.id) && (f.categoria === 'analitica' || (conSeguimiento && (f.trackId != null || (f.motor && f.motor.startsWith('coco') && esSeguible(f.clase)))));
+          const reemplazable = f.estado === 'sugerido' && !evid.has(f.id) && (f.categoria === 'analitica' || (usarIA && f.motor && f.motor.startsWith('coco')) || (conSeguimiento && (f.trackId != null || (f.motor && f.motor.startsWith('coco') && esSeguible(f.clase)))));
           if (reemplazable) await db.del('findings', f.id);
         }
         for (const a of await db.by('analysis', 'recordingId', rec.id)) await db.del('analysis', a.id);
@@ -274,7 +281,7 @@
         if (conSeguimiento) for (const p of resAna.pistas) finds.push({
           id: V.id('hal'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, fuente: 'grabacion', clase: p.clase, trackId: p.trackId,
           etiqueta: V.claseEs(p.clase) + ' #' + p.trackId,
-          inicio: p.inicio, fin: p.fin, n: p.muestras, score: +p.mejor.score.toFixed(3), frameId: p.mejor.frameId, tMejor: p.mejor.t, bbox: p.mejor.bbox, motor: IA.motorId + '+seguimiento', atributos: p.atributos,
+          inicio: p.inicio, fin: p.fin, n: p.muestras, score: +p.mejor.score.toFixed(3), frameId: p.mejor.frameId, tMejor: p.mejor.t, bbox: p.mejor.bbox, motor: IA.motorId + '+seguimiento', atributos: p.atributos, firma: p.firma || undefined,
           tAbs: rec.horaInicio != null ? rec.horaInicio + p.inicio * 1000 : null, estado: 'sugerido', creadoEn: Date.now()
         });
         for (const e of resAna.eventos) {
@@ -287,10 +294,11 @@
             tAbs: rec.horaInicio != null ? rec.horaInicio + e.inicio * 1000 : null, estado: 'sugerido', creadoEn: Date.now()
           });
         }
-        await db.put('analysis', { id: V.id('ana'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, creadoEn: Date.now(), configuracion: cam && cam.analitica || null, resultado: { motor: resAna.motor, ia: resAna.ia, conteos: resAna.conteos, ocupacion: resAna.ocupacion, puertas: resAna.puertas, calor: resAna.calor, parametros: resAna.parametros, muestras: resAna.muestras, pistas: resAna.pistas.map(p => ({ trackId: p.trackId, clase: p.clase, inicio: p.inicio, fin: p.fin, atributos: p.atributos, trayectoria: p.trayectoria })) } });
+        await db.put('analysis', { id: V.id('ana'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, creadoEn: Date.now(), configuracion: cam && cam.analitica || null, resultado: { motor: resAna.motor, ia: resAna.ia, conteos: resAna.conteos, ocupacion: resAna.ocupacion, puertas: resAna.puertas, calor: resAna.calor, parametros: resAna.parametros, muestras: resAna.muestras, pistas: resAna.pistas.map(p => ({ trackId: p.trackId, grupo: p.grupo, clase: p.clase, inicio: p.inicio, fin: p.fin, atributos: p.atributos, firma: p.firma, mejor: p.mejor, trayectoria: p.trayectoria })) } });
       }
       await db.putMany('findings', finds);
       rec.motores = Array.from(new Set([...(rec.motores || []), ...(hacerMov ? ['movimiento-v1'] : []), ...(usarIA ? [IA.motorId] : []), ...(motor ? ['analitica-v1'] : [])]));
+      if (!await db.get('recordings', rec.id)) throw new V.VigiaError('CONFLICTO', 'La grabación se eliminó durante la indexación.');
       rec.indexado = true; rec.estado = 'indexado'; rec.indexadoEn = Date.now();
       rec.ultimoIndice = { frames: N, paso, detecciones: dets.length, hallazgos: finds.length, eventos: resAna ? resAna.eventos.length : 0 };
       await db.put('recordings', rec);
@@ -358,7 +366,8 @@
       await M.seek(v, a);
       const done = new Promise(res => rec2.onstop = res);
       rec2.start(500); await v.play();
-      await new Promise(res => { const tick = () => { if (onProgress) onProgress((v.currentTime - a) / (b - a)); if (v.currentTime >= b || v.ended) res(); else requestAnimationFrame(tick); }; tick(); });
+      const limite = performance.now() + (b - a) * 3000 + 10000; // salvaguarda: pestaña oculta, error o bloqueo del decodificador
+      await new Promise((res, rej) => { const tick = () => { if (onProgress) onProgress((v.currentTime - a) / (b - a)); if (v.error) return rej(new V.VigiaError('DECODIFICACION', 'Error de decodificación durante la recodificación.')); if (v.currentTime >= b || v.ended || performance.now() > limite) res(); else setTimeout(tick, 40); }; tick(); });
       v.pause(); rec2.stop(); await done;
       const out = new Blob(chunks, { type: 'video/webm' });
       return api.saveDerivative(token, recordingId, out, Object.assign(base, {

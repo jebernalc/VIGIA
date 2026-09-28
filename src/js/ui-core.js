@@ -31,6 +31,7 @@
     out: ic('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
     check: ic('<path d="m5 12 5 5L20 7"/>'),
     panel: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/>'),
+    map: ic('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/>'),
     cpu: ic('<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>')
   });
 
@@ -39,6 +40,7 @@
     let box = V.$('.toasts'); if (!box) { box = document.createElement('div'); box.className = 'toasts'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
     const t = document.createElement('div'); t.className = 'toast ' + (kind || ''); t.textContent = msg; box.appendChild(t);
     setTimeout(() => t.remove(), ms || 5000);
+    return t;
   };
   V.errMsg = e => (e && e.code ? '[' + e.code + '] ' : '') + (e && e.message ? e.message : String(e));
   V.fail = e => { console.error(e); V.toast(V.errMsg(e), 'bad', 8000); };
@@ -165,10 +167,10 @@
     };
   };
 
-  A.logout = async function () { V.live.stopAll(); if (A.views.chat.reset) A.views.chat.reset(); A.seleccion = { cameraIds: [], ventana: { modo: 'ultimos', segundos: 300, texto: 'últimos 5 min' } }; A.ctxTab = 'reproductor'; if (A.views.expedientes) A.views.expedientes.sel = null; if (A.views.hallazgos) A.views.hallazgos.f = { estado: '', cameraId: '', clase: '' }; await A.api.logout(A.token); A.token = null; A.session = null; A.urlCache.clear(); A.chatId = null; A.renderLogin(); };
+  A.logout = async function () { V.live.stopAll(); if (V.cloud && V.cloud.user) await V.cloud.salir().catch(() => { }); if (A.views.chat.reset) A.views.chat.reset(); A.seleccion = { cameraIds: [], ventana: { modo: 'ultimos', segundos: 300, texto: 'últimos 5 min' } }; A.ctxTab = 'reproductor'; if (A.views.expedientes) A.views.expedientes.sel = null; if (A.views.hallazgos) A.views.hallazgos.f = { estado: '', cameraId: '', clase: '' }; await A.api.logout(A.token); A.token = null; A.session = null; A.urlCache.clear(); A.chatId = null; A.renderLogin(); };
 
   // ---------- shell ----------
-  const NAV = [['ops', 'Centro de operaciones', 'ops'], ['chat', 'Chat', 'chat'], ['analitica', 'Analítica y casos de uso', 'kpi'], ['hallazgos', 'Hallazgos', 'find'], ['expedientes', 'Expedientes', 'case'], ['indicadores', 'Indicadores', 'kpi'], ['admin', 'Administración', 'admin']];
+  const NAV = [['ops', 'Centro de operaciones', 'ops'], ['alarmas', 'Central de alarmas', 'bell'], ['plano', 'Plano del sitio', 'map'], ['chat', 'Chat', 'chat'], ['analitica', 'Analítica y casos de uso', 'kpi'], ['hallazgos', 'Hallazgos', 'find'], ['expedientes', 'Expedientes', 'case'], ['indicadores', 'Indicadores', 'kpi'], ['admin', 'Administración', 'admin']];
   A.views = {};
   A.start = function () {
     document.body.innerHTML = `<div class="shell"><header class="top" id="top"></header>
@@ -197,7 +199,7 @@
       <div class="right row">
         ${jobs ? `<span class="pill" data-go="ops" title="Trabajos de indexación en curso"><span class="spin"></span> ${jobs} trabajo(s)</span>` : ''}
         <span class="pill hide-sm" data-go="admin:ia" title="Motor de visión">${I.cpu.replace('<svg', '<svg width="14" height="14"')} IA: ${ia === 'listo' ? '<span class="dot ok"></span> COCO-SSD' : ia === 'cargando' ? '<span class="spin"></span> cargando' : ia === 'error' ? '<span class="dot bad"></span> error' : 'sólo movimiento'}</span>
-        <span class="pill" data-go="ops" title="Alertas nuevas" aria-label="${alertas} alertas nuevas">${I.bell.replace('<svg', '<svg width="15" height="15"')} ${alertas ? '<b style="color:var(--warn)">' + alertas + '</b>' : '0'}</span>
+        <span class="pill" data-go="alarmas" title="Alarmas nuevas (central de alarmas)" aria-label="${alertas} alertas nuevas">${I.bell.replace('<svg', '<svg width="15" height="15"')} ${alertas ? '<b style="color:var(--warn)">' + alertas + '</b>' : '0'}</span>
         <button class="btn ghost sm" id="th" title="Tema claro/oscuro" aria-label="Cambiar tema">${I.sun}</button>
         <span class="small tx2 hide-sm">${esc(A.session.nombre)}</span>
         <button class="btn ghost sm" id="lo" title="Cerrar sesión" aria-label="Cerrar sesión">${I.out}</button>

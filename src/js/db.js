@@ -38,7 +38,9 @@
   };
   // v2: resultados de analítica por grabación (conteos, ocupación, puertas, mapa de calor, pistas)
   MIGRATIONS[2] = db => { const s = db.createObjectStore('analysis', { keyPath: 'id' }); s.createIndex('org', 'org', { unique: false }); s.createIndex('recordingId', 'recordingId', { unique: false }); s.createIndex('cameraId', 'cameraId', { unique: false }); };
-  const VERSION = 2;
+  // v3: plano del sitio (posición, orientación y campo de visión de cada cámara)
+  MIGRATIONS[3] = db => { const s = db.createObjectStore('plans', { keyPath: 'id' }); s.createIndex('org', 'org', { unique: false }); };
+  const VERSION = 3;
 
   class DB {
     constructor(name) { this.name = name; this.db = null; this.mem = null; }
@@ -48,7 +50,7 @@
         this.db = await new Promise((res, rej) => {
           const r = indexedDB.open(this.name, VERSION);
           r.onupgradeneeded = e => { const db = r.result; for (let v = e.oldVersion + 1; v <= VERSION; v++) MIGRATIONS[v](db); };
-          r.onsuccess = () => res(r.result);
+          r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); res(r.result); }; // otra pestaña actualiza el esquema: se libera la conexión
           r.onerror = () => rej(r.error);
           r.onblocked = () => rej(new Error('Base de datos bloqueada por otra pestaña'));
         });

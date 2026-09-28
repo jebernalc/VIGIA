@@ -14,15 +14,15 @@
   class Adapter {
     constructor(cam, token) {
       this.cam = cam; this.org = cam.org; this.token = token; this.estado = 'conectando'; this.ring = []; this.segs = []; this.analisis = true; this.md = new V.media.MotionDetector(cam.mascaras); this.listeners = new Set();
-      this.alertasAna = [];
-      this.motor = V.analitica ? new V.analitica.Motor(cam, { onAlerta: a => this.alertasAna.push(a) }) : null;
+      this.alertasAna = []; this._nt = 0;
+      this.motor = V.analitica ? new V.analitica.Motor(cam, { onAlerta: (tipo, a) => this.alertasAna.push(a), tz: cam.tz, horaInicio: Date.now() }) : null;
     }
     get cameraId() { return this.cam.id; }
     async _startCapture() {
       this.canvas = document.createElement('canvas');
-      this.timer = setInterval(() => this._tick().catch(e => console.warn(e)), 1000);
+      this.timer = setInterval(() => { if (this._tk) return; this._tk = true; this._tick().catch(e => console.warn(e)).finally(() => { this._tk = false; }); }, 1000);
       this._startSegments();
-      this.estado = 'conectada'; this.conectadaEn = Date.now(); L._changed();
+      this.estado = 'conectada'; this.conectadaEn = Date.now(); if (this.motor) this.motor.opts.horaInicio = this.conectadaEn; L._changed();
     }
     async _tick() {
       const v = this.video;
@@ -35,7 +35,7 @@
       if (this.analisis) {
         const m = this.md.step(c); f.mov = m;
         if (V.ia.estado === 'listo' && !this._busy) { this._busy = true; try { f.dets = (await V.ia.detectar(c)) || []; f.motor = V.ia.motorId; } finally { this._busy = false; } }
-        if (this.motor) { this.motor.frame({ t: (f.ts - this.conectadaEn) / 1000, frameId: 'vivo_' + f.ts, canvas: c, dets: V.ia.estado === 'listo' ? f.dets : null }); f.ana = this.motor.estadoActual(); }
+        if (this.motor) { this.motor.frame({ t: (f.ts - this.conectadaEn) / 1000, frameId: 'vivo_' + f.ts, canvas: c, dets: V.ia.estado === 'listo' ? f.dets : null }); f.ana = this.motor.estadoActual(); if (++this._nt % 60 === 0) this.motor.podar((f.ts - this.conectadaEn) / 1000 - BUF_S); }
         await this._rules(f);
       }
       this.last = f; this.ring.push(f); while (this.ring.length > BUF_S) this.ring.shift();
@@ -55,7 +55,7 @@
       next();
     }
     async _rules(f) {
-      const rules = (await V.app.api.db.by('rules', 'cameraId', this.cam.id)).filter(r => r.org === this.org && r.estado === 'activa' && Date.now() < r.hasta);
+      const rules = (await V.app.api.db.by('rules', 'cameraId', this.cam.id)).filter(r => r.org === this.org && r.estado === 'activa' && Date.now() < r.hasta && V.horario.activo(r.horario, Date.now(), this.cam.tz) !== false);
       const ana = this.alertasAna.splice(0);
       for (const r of rules) {
         if (V.analitica && V.analitica.esEvento(r.clase)) {
@@ -112,11 +112,12 @@
   }
 
   L.start = async function (token, cam, opts) {
+    if (!V.app.api.can(token, 'vivo.usar')) throw new V.VigiaError('PROHIBIDO', 'Sin permiso para usar video en vivo.');
     L.stop(cam.id);
     const A = cam.tipo === 'webcam' ? WebcamAdapter : cam.tipo === 'archivo' ? FileEmulationAdapter : null;
     if (!A) throw new V.VigiaError('NO_SOPORTADO', 'RTSP no puede abrirse directamente desde un navegador. Requiere el agente de borde (fase posterior, ver ARCHITECTURE.md).');
     const a = new A(cam, token); L.adapters.set(cam.id, a); L._changed();
-    try { await a.start(opts && opts.recordingId); } catch (e) { L.adapters.delete(cam.id); L._changed(); throw e; }
+    try { await a.start(opts && opts.recordingId); } catch (e) { try { a.stop(); } catch (_) { } L.adapters.delete(cam.id); L._changed(); throw e; }
     await V.app.api._audit(V.app.api._ctx(token), 'vivo.conectar', 'camara', cam.id, { tipo: a.tipo });
     return a;
   };

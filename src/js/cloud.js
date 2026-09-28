@@ -36,10 +36,10 @@
   const iso = ms => ms == null ? null : new Date(ms).toISOString();
   /** Construye las filas a sincronizar a partir de la API local (respeta permisos del usuario local). */
   C.filas = async function (api, token, orgId) {
-    const f = { camaras: [], grabaciones: [], hallazgos: [], derivados: [], expedientes: [], evidencias: [], auditoria: [], conteos: [], analisis: [] };
+    const f = { camaras: [], grabaciones: [], hallazgos: [], derivados: [], expedientes: [], evidencias: [], auditoria: [], conteos: [], analisis: [], alarmas: [], planos: [] };
     for (const c of await api.listCameras(token)) f.camaras.push({ org_id: orgId, id: c.id, numero: c.numero, codigo: c.codigo, nombre: c.nombre, tipo: c.tipo, tz: c.tz, ubicacion: c.ubicacion || null, sede: c.sede || null, zona: c.zona || null, analitica: c.analitica || null, actualizado_en: iso(Date.now()) });
     for (const r of await api.listRecordings(token)) f.grabaciones.push({ org_id: orgId, id: r.id, camara_id: r.cameraId, nombre_archivo: r.nombreArchivo, bytes: r.size, sha256: r.sha256, duracion_s: r.duracion, codec: r.codec, ancho: r.ancho, alto: r.alto, hora_inicio: iso(r.horaInicio), hora_inicio_fuente: r.horaInicioFuente, subido_por: r.subidoPorEmail, importado_en: iso(r.importadoEn), motores: r.motores || [], indexado: !!r.indexado, actualizado_en: iso(Date.now()) });
-    for (const h of await api.listFindings(token)) f.hallazgos.push({ org_id: orgId, id: h.id, grabacion_id: h.recordingId, camara_id: h.cameraId, clase: h.clase, etiqueta: h.etiqueta, inicio_s: h.inicio, fin_s: h.fin, t_abs: iso(h.tAbs), score: h.score, motor: h.motor, estado: h.estado, revisado_por: h.revisadoPor || null, categoria: h.categoria || null, detalle: h.detalle || null, atributos: h.atributos || null, track_id: h.trackId != null ? h.trackId : null, experimental: !!h.experimental, actualizado_en: iso(Date.now()) });
+    for (const h of await api.listFindings(token)) f.hallazgos.push({ org_id: orgId, id: h.id, grabacion_id: h.recordingId, camara_id: h.cameraId, clase: h.clase, etiqueta: h.etiqueta, inicio_s: h.inicio, fin_s: h.fin, t_abs: iso(h.tAbs), score: h.score, motor: h.motor, estado: h.estado, revisado_por: h.revisadoPor || null, categoria: h.categoria || null, detalle: h.detalle || null, atributos: h.atributos || null, track_id: h.trackId != null ? h.trackId : null, experimental: !!h.experimental, firma: Array.isArray(h.firma) && h.firma.length === 30 ? h.firma : null, actualizado_en: iso(Date.now()) });
     if (api.can(token, 'medios.ver')) for (const d of await api.listDerivatives(token)) f.derivados.push({ org_id: orgId, id: d.id, tipo: d.tipo, grabacion_id: d.recordingId, camara_id: d.cameraId, nombre: d.nombre, sha256: d.sha256, origen_sha256: d.origenSha256, inicio_s: d.inicio, fin_s: d.fin, metodo: d.metodo, transformacion: d.transformacion, creado_por: d.creadoPor, creado_en: iso(d.creadoEn), actualizado_en: iso(Date.now()) });
     for (const c of await api.listCases(token)) {
       f.expedientes.push({ org_id: orgId, id: c.id, codigo: c.codigo, titulo: c.titulo, descripcion: c.descripcion, prioridad: c.prioridad, estado: c.estado, aprobacion: c.aprobacion, creado_por: c.creadoPor, creado_en: iso(c.creadoEn), actualizado_en: iso(Date.now()) });
@@ -52,15 +52,21 @@
       f.analisis.push({ org_id: orgId, id: a.id, grabacion_id: a.recordingId, camara_id: a.cameraId, motor: R.motor, ia: !!R.ia, ocupacion: R.ocupacion, puertas: R.puertas, calor: R.calor, parametros: R.parametros, configuracion: a.configuracion, eventos_por_tipo: ev, actualizado_en: iso(Date.now()) });
       R.conteos.forEach(c => f.conteos.push({ org_id: orgId, id: a.recordingId + ':' + c.lineaId, grabacion_id: a.recordingId, camara_id: a.cameraId, linea_id: c.lineaId, linea: c.linea, clase: c.clase, entradas: c.entradas, salidas: c.salidas, cruces: c.cruces, actualizado_en: iso(Date.now()) }));
     }
+    for (const a of await api.listAlerts(token)) {
+      const al = V.alarmas; const x = a.prioridad ? a : Object.assign({}, a, al.inicial(a.clase));
+      f.alarmas.push({ org_id: orgId, id: a.id, camara_id: a.cameraId || null, regla_id: a.ruleId || null, hallazgo_id: a.findingId || null, clase: a.clase, prioridad: x.prioridad, sla_s: x.slaS, estado: al.estado(a), fuente: a.fuente || 'regla', creada_en: iso(a.ts), reconocida_en: iso(a.reconocidaEn), reconocida_por: a.reconocidaPor || null, dentro_sla: a.dentroSLA == null ? null : !!a.dentroSLA, asignada_a: a.asignadoA || null, cerrada_en: iso(a.cerradaEn), cerrada_por: a.cerradaPor || null, resolucion: a.resolucion || null, nota_cierre: a.notaCierre || null, pasos: x.pasos || [], historial: a.historial || [], actualizado_en: iso(Date.now()) });
+    }
+    const pl = await api.getPlan(token); if (pl) f.planos.push({ org_id: orgId, id: pl.id, nombre: pl.nombre, imagen: pl.imagen || null, camaras: pl.camaras, actualizado_por: pl.actualizadoPor, actualizado_en: iso(pl.actualizadoEn) });
     if (api.can(token, 'auditoria.ver')) for (const a of (await api.auditLog(token, { limit: 1000 })).items) f.auditoria.push({ org_id: orgId, id: a.id, usuario: a.email, accion: a.accion, recurso: a.recurso, recurso_id: a.recursoId, detalle: a.detalle, ts: iso(a.ts), prev: a.prev, hash: a.hash });
     return f;
   };
 
   /** Sube las filas por lotes (upsert). La auditoría sólo se inserta (nunca se modifica en la nube). */
   C.sincronizar = async function (api, token, orgId, onProgress) {
+    if (!api.can(token, 'admin.politicas')) throw new V.VigiaError('PROHIBIDO', 'Sólo el administrador institucional puede sincronizar con la nube.');
     if (!C.user) throw new V.VigiaError('NO_AUTENTICADO', 'Inicie sesión en la nube primero.');
     const f = await C.filas(api, token, orgId); const resumen = {};
-    const tablas = [['camaras', 'vigia_camaras'], ['grabaciones', 'vigia_grabaciones'], ['hallazgos', 'vigia_hallazgos'], ['derivados', 'vigia_derivados'], ['expedientes', 'vigia_expedientes'], ['evidencias', 'vigia_evidencias'], ['conteos', 'vigia_conteos'], ['analisis', 'vigia_analisis'], ['auditoria', 'vigia_auditoria']];
+    const tablas = [['camaras', 'vigia_camaras'], ['grabaciones', 'vigia_grabaciones'], ['hallazgos', 'vigia_hallazgos'], ['derivados', 'vigia_derivados'], ['expedientes', 'vigia_expedientes'], ['evidencias', 'vigia_evidencias'], ['conteos', 'vigia_conteos'], ['alarmas', 'vigia_alarmas'], ['planos', 'vigia_planos'], ['analisis', 'vigia_analisis'], ['auditoria', 'vigia_auditoria']];
     let i = 0;
     for (const [k, t] of tablas) {
       const rows = f[k]; resumen[k] = rows.length;
@@ -76,7 +82,7 @@
   };
   C.conteos = async function (orgId) {
     const out = {};
-    for (const t of ['vigia_camaras', 'vigia_grabaciones', 'vigia_hallazgos', 'vigia_derivados', 'vigia_expedientes', 'vigia_evidencias', 'vigia_conteos', 'vigia_analisis']) {
+    for (const t of ['vigia_camaras', 'vigia_grabaciones', 'vigia_hallazgos', 'vigia_derivados', 'vigia_expedientes', 'vigia_evidencias', 'vigia_conteos', 'vigia_analisis', 'vigia_alarmas', 'vigia_planos']) {
       const r = await C.cliente().from(t).select('id', { count: 'exact', head: true }).eq('org_id', orgId);
       out[t.replace('vigia_', '')] = r.error ? '—' : r.count;
     }

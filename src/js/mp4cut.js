@@ -177,7 +177,7 @@
     const plan = [];
     plan.push({ t: vtr, sel: V.sel, baseDts: V.baseDts, elstMediaTime: V.minCts - V.baseDts, mediaDur: V.sel.reduce((a, s) => a + s.dur, 0), presDur: (V.maxEnd - V.minCts) / vtr.timescale });
     for (const at of mv.tracks.filter(t => t.handler === 'soun')) {
-      const A = selectAudio(at, V.decodeStart, V.t1);
+      const A = selectAudio(at, V.t0, V.t1); // el audio arranca donde empieza la presentación del video (lista de edición), no en su decodificación
       if (A.sel.length) plan.push({ t: at, sel: A.sel, baseDts: A.baseDts, elstMediaTime: -1, mediaDur: A.sel.reduce((a, s) => a + s.dur, 0), presDur: A.sel.reduce((a, s) => a + s.dur, 0) / at.timescale });
     }
     plan.forEach((p, i) => { p.t.newId = i + 1; });

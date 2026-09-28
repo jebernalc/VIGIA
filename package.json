@@ -1,11 +1,15 @@
 {
   "name": "vigia",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "VIGÍA — plataforma local de monitoreo y análisis de video",
   "main": "index.js",
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node tests/node_nlp.test.cjs && node tests/node_mp4cut.test.cjs && node tests/e2e.mjs"
+    "lint": "eslint src tests tools",
+    "test": "node tests/node_nlp.test.cjs && node tests/node_mp4cut.test.cjs && node tests/run_suite.mjs && node tests/e2e.mjs",
+    "test:casos": "node tests/e2e_casos.mjs",
+    "test:nube": "node tests/cloud.mjs",
+    "test:ia": "node tests/run_suite.mjs --ia"
   },
   "keywords": [],
   "author": "",
@@ -18,6 +22,8 @@
     "mp4box": "^0.5.3"
   },
   "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.12.0",
     "playwright": "^1.56.0"
   }
 }

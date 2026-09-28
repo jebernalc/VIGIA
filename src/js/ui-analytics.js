@@ -75,7 +75,7 @@
     const occ = R ? R.ocupacion.reduce((m, o) => Math.max(m, o.max), 0) : 0;
     const personas = finds.filter(f => f.trackId != null && f.clase === 'person').length;
     el.innerHTML = `<div class="card"><div class="row"><h2 class="h2 grow">Resultados</h2><select id="vrec" aria-label="Grabación">${recs.map(r => `<option value="${r.id}" ${r.id === rec.id ? 'selected' : ''}>${esc(r.nombreArchivo)} · ${V.fmtDur(r.duracion)}</option>`).join('')}</select>
-        ${A.api.can(A.token, 'grabaciones.cargar') ? `<button class="btn sm" id="vrea">${I.cpu} Reanalizar con la configuración actual</button>` : ''}</div>
+        ${A.api.can(A.token, 'medios.ver') ? `<button class="btn sm" data-pro="sinopsis" data-id="${rec.id}" title="Resumen condensado: todos los objetos a la vez, con su hora real">${I.play} Sinopsis de video</button>` : ''}${A.api.can(A.token, 'grabaciones.cargar') ? `<button class="btn sm" id="vrea">${I.cpu} Reanalizar con la configuración actual</button>` : ''}</div>
       ${!an ? `<div class="alert-box" style="margin-top:10px">Esta grabación aún no tiene análisis de casos de uso${rec.indexado ? ' (se indexó antes de configurar la analítica). Pulse «Reanalizar».' : ' (indexación pendiente).'}</div>` : `
       <p class="tiny muted" style="margin:6px 0 10px">${rec.horaInicio ? esc(V.fmtDateTime(rec.horaInicio, cam.tz)) + ' → ' + esc(V.fmtTime(rec.horaInicio + rec.duracion * 1000, cam.tz)) : 'sin hora de captura'} · ${R.muestras} muestras · motores ${esc((rec.motores || []).join(', '))}${R.ia ? '' : ' · <b>sin IA: conteos, merodeo, intrusión y estacionamiento no disponibles</b>'}</p>
       <div class="kpis">${[['Ingresos', E, R.conteos.map(c => c.linea).join(', ') || 'sin línea'], ['Salidas', S, 'neto ' + (E - S >= 0 ? '+' : '') + (E - S)], ['Ocupación máxima', occ, R.ocupacion.map(o => o.zona).join(', ') || 'sin zona de ocupación'], ['Personas distintas (pistas)', personas, 'seguimiento en esta cámara'], ['Eventos de analítica', evs.length, Object.keys(porTipo).length + ' tipos'], ['Revisados', evs.filter(f => f.estado !== 'sugerido').length, 'de ' + evs.length]].map(([l, v, s]) => `<div class="kpi"><div class="l">${esc(l)}</div><div class="v">${v}</div><div class="s">${esc(s)}</div></div>`).join('')}</div>
@@ -142,6 +142,7 @@
       const item = (tipo, x, i, extra) => `<div class="row" style="padding:3px 0;border-bottom:1px solid var(--line)"><span class="badge">${tipo}</span><input type="text" value="${esc(x.nombre)}" data-ren="${tipo}:${i}" style="padding:3px 6px;width:200px">${extra || ''}<button class="btn xs danger right" data-del="${tipo}:${i}">quitar</button></div>`;
       bg.querySelector('#aelist').innerHTML = (cfg.zonas.map((z, i) => item('zona', z, i, ' <span class="tiny muted">' + esc(USOS.find(u => u[0] === z.uso)[1]) + '</span>')).join('') + cfg.lineas.map((l, i) => item('linea', l, i, ' <button class="btn xs" data-inv="' + i + '">invertir sentido</button>')).join('') + cfg.puertas.map((p, i) => item('puerta', p, i)).join('')) || '<span class="muted">Sin elementos. Dibuje sobre la imagen.</span>';
     };
+    const acE = new AbortController();
     const r = await V.modal('Analítica · ' + cam.codigo + ' ' + cam.nombre, html, [{ label: 'Cancelar', value: null }, { label: 'Guardar configuración', cls: 'pri', value: true }], {
       wide: true, onOpen: bg => {
         const box = bg.querySelector('#aebox'); let st = null, cur = null; draw(bg);
@@ -156,7 +157,7 @@
         };
         box.onmousemove = e => { if (!st) return; const p = pos(e); if (cur.a) cur.b = p; else cur.rect = { x: Math.min(st.x, p.x), y: Math.min(st.y, p.y), w: Math.abs(p.x - st.x), h: Math.abs(p.y - st.y) }; draw(bg); };
         const up = () => { if (!st) return; const tiny = cur.a ? Math.hypot(cur.b.x - cur.a.x, cur.b.y - cur.a.y) < 0.03 : (cur.rect.w < 0.02 || cur.rect.h < 0.02); if (tiny) [cfg.lineas, cfg.puertas, cfg.zonas].forEach(arr => { const i = arr.indexOf(cur); if (i >= 0) arr.splice(i, 1); }); st = null; cur = null; draw(bg); };
-        window.addEventListener('mouseup', up);
+        window.addEventListener('mouseup', up, { signal: acE.signal });
         bg.querySelector('#aelist').onclick = e => {
           const d = e.target.closest('[data-del]'), inv = e.target.closest('[data-inv]');
           if (d) { const [t, i] = d.dataset.del.split(':'); ({ zona: cfg.zonas, linea: cfg.lineas, puerta: cfg.puertas })[t].splice(+i, 1); draw(bg); }
@@ -166,6 +167,7 @@
         V.$$('[data-par]', bg).forEach(inp => inp.oninput = () => cfg.parametros[inp.dataset.par] = +inp.value);
       }
     });
+    acE.abort();
     if (!r) return false;
     try {
       const full = (await A.api.listCameras(A.token)).find(c => c.id === cam.id);

@@ -39,4 +39,9 @@ p=interpretar('¿alguien tapó la cámara 2?',{camaras:cams}); ok(p.clases[0]===
 p=interpretar('objetos abandonados en la cámara 1',{camaras:cams}); ok(p.clases[0]==='objeto_abandonado','objeto abandonado',p);
 p=interpretar('avísame si la puerta queda abierta en la cámara 2 durante 60 minutos',{camaras:cams}); ok(p.intent==='regla'&&p.regla.clase==='puerta_abierta'&&p.regla.duracionMin===60,'regla de puerta abierta',p);
 p=interpretar('¿cuántos vehículos salieron por la cámara 2?',{camaras:cams}); ok(p.intent==='conteo'&&p.conteo.clase==='vehiculo'&&p.conteo.sentido==='salida','conteo de salidas de vehículos',p);
+p=interpretar('avísame si hay intrusión en la cámara 2 de 22:00 a 06:00 de lunes a viernes',{camaras:cams}); ok(p.intent==='regla'&&p.regla.clase==='intrusion'&&p.regla.horario&&p.regla.horario.desde==='22:00'&&p.regla.horario.hasta==='06:00'&&p.regla.horario.dias.join()==='1,2,3,4,5'&&p.regla.duracionMin===10080,'regla con horario nocturno entre semana (7 días)',p);
+p=interpretar('alértame si aparece una persona en la cámara 1 en la noche durante 2 horas',{camaras:cams}); ok(p.intent==='regla'&&p.regla.horario&&p.regla.horario.desde==='22:00'&&p.regla.duracionMin===120,'regla nocturna con vigencia explícita',p);
+p=interpretar('sinopsis de la cámara 2',{camaras:cams}); ok(p.intent==='sinopsis'&&p.camaras[0]==='c2','sinopsis de video',p);
+p=interpretar('busca personas parecidas a este hallazgo',{camaras:cams,hallazgoSeleccionado:'h9'}); ok(p.intent==='similares'&&p.referencia.hallazgo==='h9','búsqueda por apariencia',p);
+p=interpretar('¿cuántas alarmas abiertas hay?',{camaras:cams}); ok(p.intent==='alarmas','estado de la central de alarmas',p);
 process.exit(fails?1:0);

@@ -20,6 +20,10 @@ El pedido exigía un producto **que se abra desde cualquier navegador y funcione
 
 Pipeline por muestra (1 fps): detector IA (opcional) → seguimiento multiobjeto (predicción de velocidad + asignación óptima) → reglas geométricas por zona y línea → análisis de píxeles en rejilla 32×18 (puerta, objeto abandonado, manipulación, humo) → eventos con fotograma, recuadro, parámetros y motivo. El mismo motor corre en la indexación y en vivo (alertas inmediatas por regla). En producción, el agente de borde ejecutará este mismo motor, o su equivalente con modelos en GPU, y enviará sólo eventos y metadatos al plano de control. Ver `CASOS_DE_USO.md`.
 
+### Funciones avanzadas (v1.1)
+
+`api-pro.js` extiende la API v1 con la central de alarmas (máquina de estados nueva → reconocida → en atención → cerrada, SLA por prioridad, SOP e historial), el plano del sitio (almacén `plans`, migración IndexedDB v3), la búsqueda por apariencia y la recopilación del paquete de evidencia. `pro.js` ejecuta en el navegador la sinopsis (fondo por mediana, planificación sin colisiones, recortes del original), la redacción de privacidad (pixelado irreversible por detecciones) y el empaquetado ZIP con SHA256SUMS. En la fase servidor, la sinopsis y la redacción pasan a trabajadores GPU y la central de alarmas a un servicio con notificaciones (correo, SMS, webhook) y escalamiento por turnos. Ver `FUNCIONES_AVANZADAS.md`.
+
 ### Flujo del chat
 
 `interpretar (nlp.js) → normalizar zona horaria (chat.js) → autorizar y comprobar cobertura (api.js) → planificar → ejecutar herramientas limitadas (búsqueda, fotogramas, clip, expediente, informe, indicadores, regla) → ensamblar hallazgos → citar evidencia → responder breve + tarjetas`.

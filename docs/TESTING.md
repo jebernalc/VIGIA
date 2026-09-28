@@ -24,12 +24,13 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 
 | Batería | Resultado | Duración |
 |---|---|---|
-| Intérprete de prompts (Node) | **30/30** correctas (incluye conteo, eventos y colores) | < 1 s |
+| Análisis estático (ESLint 9, `npx eslint src tests tools`) | **0 errores, 0 advertencias** | 3 s |
+| Intérprete de prompts (Node) | **35/35** correctas (incluye conteo, eventos, colores, horarios, sinopsis, apariencia, alarmas) | < 1 s |
 | Corte MP4 (Node + ffprobe) | **14/14** (H.264/AAC y VP9/Opus: duración, 2 pistas, decodificación sin errores, primer fotograma idéntico al original) | 2 s |
-| Suite interna en navegador | **16/16** correctas sin IA (incluye prueba unitaria del motor de analítica); **17/17** con `--ia` | 8 s / ≈ 4 min |
-| **Casos de uso con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **14/14**: conteo 4/1, mal estacionado, color, puerta, humo, abandono, manipulación, merodeo+intrusión, ingreso en grupo, aglomeración, editor | ≈ 6 min |
+| Suite interna en navegador | **23/23** correctas sin IA (incluye motor de analítica, central de alarmas, plano, apariencia, sinopsis, horarios, ZIP, paquete de evidencia); **24/24** con `--ia` | 8 s / ≈ 4 min |
+| **Casos de uso y funciones avanzadas con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **26/26**: los 14 casos de uso + sinopsis (2:49 → 1:33), imagen estroboscópica, búsqueda por apariencia, escalado a la central, clip con privacidad, reconocimiento/SOP/cierre con SLA 100 %, plano del sitio y paquete ZIP con **todos los SHA-256 verificados con Python** | ≈ 8 min |
 | Recorrido por interfaz (e2e) | **22/22** comprobaciones | ≈ 2 min |
-| Nube Supabase (cliente simulado + SQL real) | 8/8 sincronización · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
+| Nube Supabase (cliente simulado + SQL real) | 10/10 sincronización (incluye alarmas y plano) · filas validadas contra el esquema real (migración 0004) · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
 | Cámara web simulada | primer cuadro 1,19 s · edad 0,6 s · búfer 12 s · clip de contexto 705 KB | 13 s |
 
 ### Suite interna (qué se comprueba)
@@ -49,6 +50,13 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 13. Retención: evidencia en expediente protegido no se puede borrar.
 14. Auditoría: cadena íntegra; alteración de un registro detectada.
 15. Inyección: texto con órdenes no produce organización/rol ni filtra identificadores.
+17. **Rigor**: campos de custodia (organización, hash, autor) no falsificables por el llamador; expediente aprobado no modificable por un operador; cadena de auditoría íntegra con registros del mismo milisegundo; `offset` negativo neutralizado.
+18. **Central de alarmas**: prioridad/SLA/SOP; sin duplicados; directivo no gestiona; otra organización → NO_ENCONTRADO; reconocer dos veces → CONFLICTO; asignación sólo a miembros; evento real exige nota; sólo supervisor reabre; MTTA, SLA y falsas alarmas; cierre auditado.
+19. **Plano**: operador no edita; valores normalizados; cámara de otra organización ignorada; SVG rechazado; la otra organización no ve el plano.
+20. **Apariencia**: misma ropa > 90 %, distinta < 50 %; aislamiento y permisos.
+21. **Sinopsis**: objetos en lugares distintos comparten instante; mismo lugar se desplaza; 300 s → 20 s.
+22. **Horarios y ZIP**: franja que cruza medianoche en la zona de la cámara; horario inválido rechazado; regla de 7 días; CRC-32 estándar; ZIP válido; nombres repetidos rechazados.
+23. **Paquete de evidencia**: permisos y aislamiento; manifiesto, SHA256SUMS y custodia; hashes coinciden con el registro; modo privacidad omite videos sin redactar.
 16. IA local: persona detectada en **00:01:26–00:01:46 (88%)**, evento real 01:20–01:50; **0** personas en 0–60 s.
 
 ## Qué NO se verificó

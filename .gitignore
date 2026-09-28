@@ -5,3 +5,4 @@ dist/
 # configuración local con posibles secretos (use app/vigia.config.example.js)
 app/vigia.config.local.js
 .env
+tests/capturas/*.zip

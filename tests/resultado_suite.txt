@@ -1,35 +1,50 @@
-OK    SHA-256: vectores conocidos y cálculo incremental = WebCrypto (25 ms)
+OK    SHA-256: vectores conocidos y cálculo incremental = WebCrypto (34 ms)
        3 vectores OK
-OK    Autenticación: organizaciones de prueba, credenciales y selección de organización (68 ms)
+OK    Autenticación: organizaciones de prueba, credenciales y selección de organización (101 ms)
        8 usuarios, 2 organizaciones, contraseñas aleatorias
-OK    Carga de video: original conservado con SHA-256 y metadatos (5633 ms)
+OK    Carga de video: original conservado con SHA-256 y metadatos (6347 ms)
        muestra_cam01_vp9.mp4 · 00:03:20 · vp09.00.21.08 · 201 miniaturas · inicio 2026-09-20T19:00:00.000Z (metadatos_contenedor)
-OK    Extracción de fotograma auténtico (resolución nativa, hash, referencia) (72 ms)
+OK    Extracción de fotograma auténtico (resolución nativa, hash, referencia) (73 ms)
        640×360 en 90.000 s
-OK    Clip: duración, límites y referencia correctos; hash del derivado (488 ms)
+OK    Clip: duración, límites y referencia correctos; hash del derivado (451 ms)
        mp4cut v1 · copia de flujo (stream copy) de muestras y stsd originales · 60.000→90.000 s · 276.2 KB
-OK    Ventanas de tiempo y resolución hora de reloj / posición (11 ms)
+OK    Ventanas de tiempo y resolución hora de reloj / posición (12 ms)
        decisión: posicion (posición dentro del archivo «muestra_cam01_vp9.mp4» (no coincide con el horario del archivo))
 OK    Búsqueda limitada a cámara y periodo (4 ms)
        3 hallazgos en total · 1 en 00:00:21–00:00:35
-OK    Chat: recorrido principal con evidencia real (993 ms)
+OK    Chat: recorrido principal con evidencia real (1118 ms)
        No puedo afirmar ni descartar personas o vehículos: falta análisis compatible o cobertura. Cámara 1 · 20/09/2026, 14:01:00 UTC-5 → 14:03:00 …
-OK    Respuestas honestas: cámara desconectada y ausencia de detecciones (14 ms)
+OK    Respuestas honestas: cámara desconectada y ausencia de detecciones (13 ms)
        Sin evidencia: el análisis no detectó movimiento en la ventana consultada. Cámara 1 · 20/09/2026, 14
-OK    Expediente e informe con fuentes, hashes y limitaciones (HTML + PDF) (250 ms)
+OK    Expediente e informe con fuentes, hashes y limitaciones (HTML + PDF) (215 ms)
        informe v1 · 35.6 KB HTML · PDF 33.1 KB
-OK    Aislamiento entre organizaciones (cámaras, archivos, hallazgos, chats, clips, expedientes) (29 ms)
+OK    Aislamiento entre organizaciones (cámaras, archivos, hallazgos, chats, clips, expedientes) (43 ms)
        20 comprobaciones de acceso cruzado denegadas
 OK    Permisos por rol (descarga, confirmación, gestión) (12 ms)
        operador/directivo/supervisor/investigador verificados
-OK    Retención: evidencia en expediente protegido no puede borrarse (2 ms)
+OK    Retención: evidencia en expediente protegido no puede borrarse (3 ms)
        borrado bloqueado
 OK    Auditoría encadenada: íntegra y detecta alteración (4 ms)
-       32 registros verificados; alteración detectada en aud_01M3KBK5FYYDXQ4WB21N
-OK    Inyección de instrucciones: texto no altera permisos ni alcance (3 ms)
+       32 registros verificados; alteración detectada en aud_01M3KFP050FQ0EA76YNW
+OK    Inyección de instrucciones: texto no altera permisos ni alcance (4 ms)
        intención: fotogramas
-OK    Analítica: conteo por línea, ingreso en grupo, intrusión, merodeo, mal estacionado, puerta y manipulación (motor determinista) (385 ms)
+OK    Analítica: conteo por línea, ingreso en grupo, intrusión, merodeo, mal estacionado, puerta y manipulación (motor determinista) (360 ms)
        cruce_linea=5, intrusion=1, merodeo=1, ingreso_grupal=1, aglomeracion=1, puerta_abierta=1, mal_parqueado=1, manipulacion=1
+OK    Rigor: campos de custodia no falsificables, aprobación y cadena del mismo milisegundo (52 ms)
+       derivado con org/hash/autor forzados · aprobado protegido · 10 registros encadenados
+OK    Central de alarmas: prioridad, SOP, SLA, asignación, cierre y métricas (26 ms)
+       prioridad baja · SLA 900 s · 1 pasos · MTTA 0 s
+OK    Plano del sitio: permisos y aislamiento de cámaras (6 ms)
+       plano guardado con 1 cámara; SVG rechazado (evita scripts incrustados)
+OK    Búsqueda por apariencia: firma de ropa, similitud y aislamiento (13 ms)
+       similitud misma ropa 100% · distinta 0%
+OK    Sinopsis: planificación sin superposición y compresión del tiempo (1 ms)
+       300 s → 20 s (×15)
+OK    Horarios de reglas y ZIP de evidencia verificable (7 ms)
+       franja nocturna que cruza la medianoche · ZIP 205 bytes
+OK    Paquete de evidencia: manifiesto, SHA256SUMS, custodia y permisos (105 ms)
+       9 archivos · 313.5 KB · SHA-256 a2aa2ac35653…
+OK    Motor IA local: detecta persona real en la ventana correcta (214256 ms)
+       00:01:26–00:01:46 88% · personas en 0–60 s: 0
 
-16 correctas, 0 fallidas, 8.0 s
-exit 0
+24 correctas, 0 fallidas, 223.3 s

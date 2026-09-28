@@ -58,7 +58,47 @@
       return top.length ? { color: top[0][0], proporcion: +(top[0][1] / n).toFixed(2), segundo: top[1] ? top[1][0] : null } : null;
     };
     const sup = zona(0.2, 0.5), inf = zona(0.55, 0.92);
-    return { superior: sup && sup.color, superiorP: sup && sup.proporcion, superior2: sup && sup.segundo, inferior: inf && inf.color, inferiorP: inf && inf.proporcion, metodo: 'color dominante HSV sin píxeles de piel (torso 20–50%, piernas 55–92% del recuadro)' };
+    return { superior: sup && sup.color, superiorP: sup && sup.proporcion, superior2: sup && sup.segundo, inferior: inf && inf.color, inferiorP: inf && inf.proporcion, firma: AN.firmaApariencia(data, bbox), metodo: 'color dominante HSV sin píxeles de piel (torso 20–50%, piernas 55–92% del recuadro)' };
+  };
+
+  // ---------------- firma de apariencia (búsqueda por similitud entre cámaras) ----------------
+  // Histograma HSV por franja (torso / piernas): 12 tonos cromáticos ponderados por saturación + 3 acromáticos
+  // (oscuro, gris, claro). 30 valores normalizados. No es biometría: describe la ropa, no a la persona.
+  AN.FIRMA_BINS = 15;
+  AN.firmaApariencia = function (data, bbox) {
+    const W = data.width, H = data.height, px = data.data; const out = [];
+    for (const [y0, y1] of [[0.2, 0.5], [0.55, 0.92]]) {
+      const h = new Float32Array(AN.FIRMA_BINS); let n = 0;
+      const x0 = Math.max(0, Math.floor((bbox.x + bbox.w * 0.22) * W)), x1 = Math.min(W, Math.ceil((bbox.x + bbox.w * 0.78) * W));
+      const ya = Math.max(0, Math.floor((bbox.y + bbox.h * y0) * H)), yb = Math.min(H, Math.ceil((bbox.y + bbox.h * y1) * H));
+      for (let y = ya; y < yb; y += 2) for (let x = x0; x < x1; x += 2) {
+        const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
+        if (esPiel(r, g, b)) continue;
+        const [hh, s, v] = hsv(r, g, b);
+        if (v < 0.2) h[12] += 1; else if (s < 0.18) h[v > 0.7 ? 14 : 13] += 1;
+        else { const f = hh / 30, k = Math.floor(f) % 12, w = f - Math.floor(f); h[k] += 1 - w; h[(k + 1) % 12] += w; } // reparto suave entre tonos vecinos
+        n++;
+      }
+      for (let k = 0; k < h.length; k++) out.push(n >= 12 ? +(h[k] / n).toFixed(4) : 0);
+    }
+    return out.some(x => x > 0) ? out : null;
+  };
+  /** Similitud 0..1 (coeficiente de Bhattacharyya medio de torso y piernas). */
+  AN.similitud = function (a, b) {
+    if (!a || !b || a.length !== b.length) return 0;
+    const B = AN.FIRMA_BINS; let tot = 0, partes = 0;
+    for (let o = 0; o < a.length; o += B) {
+      let sa = 0, sb = 0; for (let k = o; k < o + B; k++) { sa += a[k]; sb += b[k]; }
+      if (!sa || !sb) continue;
+      let bc = 0; for (let k = o; k < o + B; k++) bc += Math.sqrt((a[k] / sa) * (b[k] / sb));
+      tot += bc; partes++;
+    }
+    return partes ? +(tot / partes).toFixed(4) : 0;
+  };
+  AN.promediarFirmas = function (fs) {
+    const v = fs.filter(Boolean); if (!v.length) return null;
+    const m = new Array(v[0].length).fill(0); v.forEach(f => f.forEach((x, i) => m[i] += x / v.length));
+    return m.map(x => +x.toFixed(4));
   };
 
   // ---------------- geometría ----------------
@@ -128,6 +168,21 @@
     _celdaEnMascara(k) { const cx = (k % this.GW + 0.5) / this.GW, cy = (Math.floor(k / this.GW) + 0.5) / this.GH; const m = 0.04; return this.mascaras.some(r => inRect({ x: cx, y: cy }, r)) || this.cfg.puertas.some(p => inRect({ x: cx, y: cy }, { x: p.rect.x - m, y: p.rect.y - m, w: p.rect.w + 2 * m, h: p.rect.h + 2 * m })); }
     _celdasDe(b) { const out = []; const x0 = Math.floor(b.x * this.GW), x1 = Math.ceil((b.x + b.w) * this.GW), y0 = Math.floor(b.y * this.GH), y1 = Math.ceil((b.y + b.h) * this.GH); for (let y = Math.max(0, y0); y < Math.min(this.GH, y1); y++) for (let x = Math.max(0, x0); x < Math.min(this.GW, x1); x++) out.push(y * this.GW + x); return out; }
     /** Aviso inmediato (uso en vivo): se emite una vez por episodio cuando se cumple la condición. */
+    /** Libera memoria en ejecución continua (vivo): descarta series, pistas cerradas y eventos anteriores a tMin. */
+    podar(tMin) {
+      if (!(tMin > 0)) return;
+      for (const k of Object.keys(this.frameIds)) if (+k < tMin) delete this.frameIds[k];
+      this.eventos = this.eventos.filter(e => (e.fin != null ? e.fin : e.inicio) >= tMin);
+      this.cerrados = this.cerrados.filter(tr => tr.fin >= tMin);
+      Object.values(this.ocupacion).forEach(o => { o.serie = o.serie.filter(x => x.t >= tMin); });
+      this.puertas.forEach(pu => { pu.serie = pu.serie.filter(x => x.t >= tMin); });
+    }
+    /** Zona dentro de su horario de vigilancia (hora real = opts.horaInicio + t). Sin hora de captura no se filtra. */
+    _zonaActiva(z, t) {
+      if (!z.horario) return true;
+      if (this.opts.horaInicio == null) { this.horarioSinHora = true; return true; }
+      return V.horario.activo(z.horario, this.opts.horaInicio + t * 1000, this.opts.tz) !== false;
+    }
     _alerta(tipo, info) { if (this.opts.onAlerta) try { this.opts.onAlerta(tipo, Object.assign({ tipo, etiqueta: AN.ETIQUETA[tipo] }, info)); } catch (e) { console.warn(e); } }
     _evento(tipo, inicio, fin, extra) { const e = Object.assign({ tipo, etiqueta: AN.ETIQUETA[tipo] || tipo, inicio, fin, experimental: !!(AN.TIPOS[tipo] && AN.TIPOS[tipo].exp) }, extra); this.eventos.push(e); return e; }
 
@@ -147,7 +202,7 @@
       let difCeldas = 0; for (let k = 0; k < G.m.length; k++) if (Math.abs(G.m[k] - this.ref.m[k]) > 30) difCeldas++;
       const tipoTamper = (G.brillo < 25 || G.brillo < baseB * 0.3) ? 'cubierta u oscurecida' : (this.base.length >= 5 && G.lap < baseL * 0.25) ? 'desenfocada' : (difCeldas / G.m.length > 0.7) ? 'movida (cambio de escena)' : null;
       const T = this.tamper;
-      if (tipoTamper) { T.cuenta++; if (!T.activo && T.cuenta >= 2) { T.activo = t - (T.cuenta - 1); T.tipo = tipoTamper; T.frameId = s.frameId; this._alerta('manipulacion', { detalle: tipoTamper, t }); } }
+      if (tipoTamper) { T.cuenta++; if (T.cuenta === 1) T.t0 = t; if (T.activo == null && T.cuenta >= 2) { T.activo = T.t0; T.tipo = tipoTamper; T.frameId = s.frameId; this._alerta('manipulacion', { detalle: tipoTamper, t }); } }
       else { if (T.activo != null) { this._evento('manipulacion', T.activo, t, { detalle: { tipo: T.tipo, brillo: +G.brillo.toFixed(1), brilloBase: +baseB.toFixed(1) }, frameId: T.frameId, score: 0.9 }); T.activo = null; } T.cuenta = 0; }
       const enTamper = T.cuenta > 0;
 
@@ -194,7 +249,7 @@
       for (let i = vivos.length - 1; i >= 0; i--) if (t - vivos[i].ult.t > 4) { this._cerrarTrack(vivos[i], P); this.cerrados.push(vivos[i]); vivos.splice(i, 1); }
       // ocupación por zona
       for (const z of this.cfg.zonas.filter(z => z.uso === 'ocupacion')) {
-        const n = vivos.filter(tr => tr.grupo === 'persona' && tr.ult.t === t && inRect(tr.ult.pie, z.rect)).length;
+        const n = this._zonaActiva(z, t) ? vivos.filter(tr => tr.grupo === 'persona' && tr.ult.t === t && inRect(tr.ult.pie, z.rect)).length : 0;
         const o = this.ocupacion[z.id]; o.max = Math.max(o.max, n); o.suma += n; o.n++; o.serie.push({ t, n });
         const um = z.umbral || P.umbralAglomeracion;
         if (n >= um) { if (o.desde == null) { o.desde = t; o.frameId = frameId; o.pico = n; this._alerta('aglomeracion', { zona: z.nombre, personas: n, t }); } o.pico = Math.max(o.pico, n); }
@@ -225,7 +280,7 @@
       }
       // zonas
       for (const z of this.cfg.zonas) {
-        const dentro = inRect(pie, z.rect); const st = tr.zonas[z.id] || (tr.zonas[z.id] = { dentro: false });
+        const dentro = inRect(pie, z.rect) && this._zonaActiva(z, t); const st = tr.zonas[z.id] || (tr.zonas[z.id] = { dentro: false });
         if (dentro && !st.dentro) { st.dentro = true; st.desde = t; st.frameId = frameId; st.bbox = d.bbox; st.reportado = {}; if (z.uso === 'restringida' && tr.grupo === 'persona') { this._evento('intrusion', t, t, { zonaId: z.id, zona: z.nombre, trackId: tr.id, frameId, bbox: d.bbox, score: d.score, detalle: { clase: tr.clase } }); this._alerta('intrusion', { zona: z.nombre, t }); } }
         if (dentro) {
           st.hasta = t; st.ultFrame = frameId; st.ultBbox = d.bbox; const dur = t - st.desde;
@@ -247,13 +302,13 @@
       pu.abiertaDesde = null;
     }
     _humo(t, frameId, G, dets) {
-      const R = this.ref; const cand = new Uint8Array(G.m.length); let n = 0;
+      const R = this.ref; const cand = new Uint8Array(G.m.length);
       for (let k = 0; k < G.m.length; k++) {
         if (this._celdaEnMascara(k) || t - this.excl[k] < 4) continue;
         const aclara = G.m[k] - R.m[k] > 12 && G.m[k] > 110;         // se vuelve más claro/gris
         const pierdeTextura = G.sd[k] < R.sd[k] * 0.75 || G.sd[k] < 6; // pierde contraste
         const gris = G.st[k] < 0.18;                                   // baja saturación
-        if (aclara && pierdeTextura && gris) { cand[k] = 1; n++; }
+        if (aclara && pierdeTextura && gris) cand[k] = 1;
       }
       // mayor componente conexa
       const seen = new Uint8Array(cand.length); let best = [];
@@ -308,14 +363,14 @@
       if (this.tamper.activo != null) this._evento('manipulacion', this.tamper.activo, t, { detalle: { tipo: this.tamper.tipo }, frameId: this.tamper.frameId, score: 0.9 });
       if (this.humo.inicio != null && this.humo.cuenta >= 4 && this.humo.creciente >= 3) this._evento('humo', this.humo.inicio, t, { frameId: this.humo.frameId, bbox: this.humo.bbox, score: Math.min(0.7, this.humo.max / 60), detalle: { areaMaxCeldas: this.humo.max, advertencia: 'Heurística experimental' } });
       const pistas = this.cerrados.filter(tr => tr.pts.length >= 2 || tr.mejor.score >= 0.7).map(tr => {
-        const cnt = {}; const col = k => { const c = {}; tr.atributos.forEach(a => { if (a[k]) c[a[k]] = (c[a[k]] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]; };
+        const col = k => { const c = {}; tr.atributos.forEach(a => { if (a[k]) c[a[k]] = (c[a[k]] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]; };
         const sup = col('superior'), inf = col('inferior');
-        return { trackId: tr.id, grupo: tr.grupo, clase: tr.clase, inicio: tr.inicio, fin: tr.fin, muestras: tr.pts.length, mejor: tr.mejor, atributos: tr.grupo === 'persona' && tr.atributos.length ? { superior: sup && sup[0], inferior: inf && inf[0], muestras: tr.atributos.length } : null, trayectoria: tr.pts.map(p => [p.t, +p.pie.x.toFixed(3), +p.pie.y.toFixed(3)]) };
+        return { trackId: tr.id, grupo: tr.grupo, clase: tr.clase, inicio: tr.inicio, fin: tr.fin, muestras: tr.pts.length, mejor: tr.mejor, atributos: tr.grupo === 'persona' && tr.atributos.length ? { superior: sup && sup[0], inferior: inf && inf[0], muestras: tr.atributos.length } : null, firma: tr.grupo === 'persona' ? AN.promediarFirmas(tr.atributos.map(a => a.firma)) : null, trayectoria: tr.pts.map(p => [p.t, +p.pie.x.toFixed(3), +p.pie.y.toFixed(3), +p.bbox.x.toFixed(4), +p.bbox.y.toFixed(4), +p.bbox.w.toFixed(4), +p.bbox.h.toFixed(4)]) };
       });
       const conteos = this.cfg.lineas.map(l => { const cs = this.cruces[l.id]; return { lineaId: l.id, linea: l.nombre, clase: l.clase || 'persona', entradas: cs.filter(c => c.sentido === 'entrada').length, salidas: cs.filter(c => c.sentido === 'salida').length, cruces: cs.map(c => ({ t: c.t, sentido: c.sentido, trackId: c.trackId, tailgating: !!c.tailgating })) }; });
       const ocupacion = this.cfg.zonas.filter(z => z.uso === 'ocupacion').map(z => { const o = this.ocupacion[z.id]; return { zonaId: z.id, zona: z.nombre, max: o.max, media: o.n ? +(o.suma / o.n).toFixed(2) : 0, serie: o.serie.filter((x, i) => i % 5 === 0 || x.n) }; });
       const puertas = this.puertas.map(pu => ({ puertaId: pu.p.id, puerta: pu.p.nombre, serie: pu.serie.filter((x, i) => i % 5 === 0 || x.abierta) }));
-      return { motor: 'analitica-v1', ia: this.ia, eventos: this.eventos, pistas, conteos, ocupacion, puertas, calor: { w: this.GW, h: this.GH, grid: Array.from(this.calor) }, parametros: P, muestras: this.n };
+      return { motor: 'analitica-v1', horarioSinHora: !!this.horarioSinHora, ia: this.ia, eventos: this.eventos, pistas, conteos, ocupacion, puertas, calor: { w: this.GW, h: this.GH, grid: Array.from(this.calor) }, parametros: P, muestras: this.n };
     }
   }
   AN.Motor = Motor;

@@ -21,6 +21,7 @@ const r = await p.evaluate(async () => {
   const rec = (await api.listRecordings(t))[0]; const h = (await api.listFindings(t))[0];
   const clip = await V.media.makeClip(api, t, rec.id, 10, 30, {});
   const c = await api.createCase(t, { titulo: 'Caso nube' }); await api.addEvidence(t, c.id, { tipo: 'hallazgo', refId: h.id }); await api.addEvidence(t, c.id, { tipo: 'clip', refId: clip.id });
+  const al = await api.alarmFromFinding(t, h.id); await api.updateAlert(t, al.id, { accion: 'reconocer' }); await api.savePlan(t, { camaras: { [cam.id]: { x: 0.4, y: 0.5, ang: 30 } } });
   await V.cloud.sesion();
   const org = '00000000-0000-0000-0000-00000000000a';
   const res = await V.cloud.sincronizar(api, t, org);
@@ -37,6 +38,8 @@ ok(!JSON.stringify(f).includes('blobKey') && !JSON.stringify(f).includes('"blob"
 ok(r.log.find(x => x[1] === 'vigia_auditoria')[3].includes('"ignoreDuplicates":true'), 'auditoría sólo inserta (ignoreDuplicates)');
 ok(r.sinc.length === 1 && r.sinc[0][0] === 'vigia_sincronizaciones', 'sincronización registrada en la nube');
 ok(r.aud, 'sincronización registrada en la auditoría local');
+ok(f.vigia_alarmas && f.vigia_alarmas.length === 1 && f.vigia_alarmas[0].estado === 'reconocida' && f.vigia_alarmas[0].sla_s > 0 && f.vigia_alarmas[0].dentro_sla === true, 'alarma con prioridad, SLA y estado sincronizada');
+ok(f.vigia_planos && f.vigia_planos.length === 1 && Object.keys(f.vigia_planos[0].camaras).length === 1, 'plano del sitio sincronizado');
 fs.writeFileSync('/tmp/claude-0/filas_nube.json', JSON.stringify(f));
 if (errs.length) { console.log(errs); process.exitCode = 1; }
 await b.close();

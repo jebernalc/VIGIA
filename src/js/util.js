@@ -145,4 +145,68 @@
 
   V.clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   V.pct = x => Math.round(x * 100) + '%';
+  // ---------- horarios de vigilancia (reglas y zonas) ----------
+  // h = { dias: [0..6] (0 = domingo), desde: 'HH:MM', hasta: 'HH:MM' }. Si desde > hasta, la franja cruza la medianoche
+  // y pertenece al día en que empieza (p. ej. viernes 22:00 → sábado 06:00 cuenta como «viernes»).
+  const HM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  V.DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  V.horario = {
+    validar(h) {
+      if (!h) return null;
+      const dias = Array.from(new Set((Array.isArray(h.dias) ? h.dias : [0, 1, 2, 3, 4, 5, 6]).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))).sort();
+      if (!HM.test(h.desde || '') || !HM.test(h.hasta || '')) throw new V.VigiaError('VALIDACION', 'Horario inválido: use HH:MM (24 h).');
+      if (h.desde === h.hasta) throw new V.VigiaError('VALIDACION', 'El horario debe tener duración (desde ≠ hasta).');
+      if (!dias.length) throw new V.VigiaError('VALIDACION', 'El horario debe incluir al menos un día.');
+      return { dias, desde: h.desde, hasta: h.hasta };
+    },
+    /** Día de la semana y minutos desde medianoche en la zona horaria de la cámara. */
+    partes(ms, tz) {
+      const p = new Intl.DateTimeFormat('en-US', { timeZone: tz || 'UTC', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(ms));
+      const g = k => (p.find(x => x.type === k) || {}).value;
+      return { dia: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(g('weekday')), min: (+g('hour') % 24) * 60 + +g('minute') };
+    },
+    activo(h, ms, tz) {
+      if (!h) return true; if (ms == null) return null; // sin hora de captura: no se puede evaluar
+      const { dia, min } = V.horario.partes(ms, tz);
+      const a = +h.desde.slice(0, 2) * 60 + +h.desde.slice(3), b = +h.hasta.slice(0, 2) * 60 + +h.hasta.slice(3);
+      if (a < b) return h.dias.includes(dia) && min >= a && min < b;
+      if (min >= a) return h.dias.includes(dia);
+      if (min < b) return h.dias.includes((dia + 6) % 7);
+      return false;
+    },
+    texto(h) {
+      if (!h) return 'siempre';
+      const d = h.dias.length === 7 ? 'todos los días' : h.dias.join(',') === '1,2,3,4,5' ? 'lunes a viernes' : h.dias.join(',') === '0,6' ? 'fines de semana' : h.dias.map(x => V.DIAS[x]).join(', ');
+      return d + ' ' + h.desde + '–' + h.hasta;
+    }
+  };
+
+  // ---------- CRC-32 y ZIP (método «stored», sin compresión: los medios ya están comprimidos) ----------
+  const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  V.crc32 = function (u8, crc) { let c = (crc === undefined ? 0 : crc) ^ 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  /** files: [{ nombre, datos: Blob|Uint8Array|string, fecha?: ms }] → Blob application/zip (UTF-8, ZIP 2.0; hasta 4 GB). */
+  V.zip = async function (files) {
+    const enc = new TextEncoder(); const partes = []; const central = []; let off = 0;
+    const dosTime = ms => { const d = new Date(ms || Date.now()); return { t: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), d: ((Math.max(1980, d.getFullYear()) - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() }; };
+    const vistos = new Set();
+    for (const f of files) {
+      let nombre = String(f.nombre).replace(/\\/g, '/').replace(/^\/+/, '').split('/').filter(x => x && x !== '..' && x !== '.').join('/');
+      if (!nombre || vistos.has(nombre)) throw new V.VigiaError('VALIDACION', 'Nombre de archivo inválido o repetido en el paquete: ' + f.nombre); vistos.add(nombre);
+      const datos = typeof f.datos === 'string' ? enc.encode(f.datos) : f.datos instanceof Blob ? new Uint8Array(await f.datos.arrayBuffer()) : f.datos;
+      if (off + datos.length > 0xFFFFFFFF - 1e6) throw new V.VigiaError('DEMASIADO_GRANDE', 'El paquete supera 4 GB; exporte por partes.');
+      const nb = enc.encode(nombre), crc = V.crc32(datos), dt = dosTime(f.fecha);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, dt.t, true); lh.setUint16(12, dt.d, true);
+      lh.setUint32(14, crc, true); lh.setUint32(18, datos.length, true); lh.setUint32(22, datos.length, true); lh.setUint16(26, nb.length, true); lh.setUint16(28, 0, true);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, dt.t, true); ch.setUint16(14, dt.d, true);
+      ch.setUint32(16, crc, true); ch.setUint32(20, datos.length, true); ch.setUint32(24, datos.length, true); ch.setUint16(28, nb.length, true); ch.setUint32(42, off, true);
+      partes.push(new Uint8Array(lh.buffer), nb, datos); central.push(new Uint8Array(ch.buffer), nb);
+      off += 30 + nb.length + datos.length;
+    }
+    const cdLen = central.reduce((a, x) => a + x.length, 0);
+    const eo = new DataView(new ArrayBuffer(22));
+    eo.setUint32(0, 0x06054b50, true); eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true); eo.setUint32(12, cdLen, true); eo.setUint32(16, off, true);
+    return new Blob([...partes, ...central, new Uint8Array(eo.buffer)], { type: 'application/zip' });
+  };
 })();

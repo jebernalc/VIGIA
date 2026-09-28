@@ -43,7 +43,7 @@
         S.camA = await api.saveCamera(S.tA, { nombre: 'Portería prueba', tipo: 'archivo', tz: 'America/Bogota', mascaras: [{ x: 0, y: 0, w: 0.53, h: 0.08 }] });
         S.camA2 = await api.saveCamera(S.tA, { nombre: 'Lobby sin video', tipo: 'archivo', tz: 'America/Bogota' });
         const f = opts.file; assert(f, 'falta archivo de prueba');
-        const { recording, job } = await api.importRecording(S.tA, S.camA.id, f, { fuenteDeclarada: 'prueba automática' });
+        const { recording } = await api.importRecording(S.tA, S.camA.id, f, { fuenteDeclarada: 'prueba automática' });
         S.rec = recording;
         assert(recording.sha256 === await V.sha256Blob(f), 'hash del original');
         await indexar();
@@ -235,6 +235,107 @@
         const a = AN.nombreColor(230, 110, 30), b2 = AN.nombreColor(20, 30, 70), w = AN.nombreColor(245, 245, 245);
         assert(a === 'naranja' && b2 === 'azul' && w === 'blanco', 'nombres de color');
         return Object.entries(r.eventos.reduce((o, e) => (o[e.tipo] = (o[e.tipo] || 0) + 1, o), {})).map(([k, v]) => k + '=' + v).join(', ');
+      });
+      await caso('Rigor: campos de custodia no falsificables, aprobación y cadena del mismo milisegundo', async () => {
+        const b = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' });
+        const orgB = api.session(S.tB).org;
+        const d = await api.saveDerivative(S.tA, null, b, { tipo: 'fotograma', cameraId: S.camA.id, org: orgB, sha256: 'falso', creadoPor: 'otro@x', nombre: 'x.png' });
+        assert(d.org === api.session(S.tA).org && d.sha256 === await V.sha256Blob(b) && d.creadoPor === 'admin@norte.demo', 'org, hash y autor los fija la API');
+        const c = await api.createCase(S.tA, { titulo: 'Aprobado' }); await api.updateCase(S.tA, c.id, { aprobacion: 'aprobado' });
+        await expectErr(api.updateCase(S.tOp, c.id, { aprobacion: 'borrador' }), 'PROHIBIDO');
+        const ctx = api._ctx(S.tB); const ts = Date.now(); // organización Sur: la prueba anterior alteró a propósito la cadena de Norte
+        const orig = Date.now; Date.now = () => ts; try { for (let i = 0; i < 6; i++) await api._audit(ctx, 'prueba.mismo_ms', 'x', 'x' + i, {}); } finally { Date.now = orig; }
+        const v = await api.verifyAudit(S.tB); assert(v.ok, 'cadena íntegra con 6 registros en el mismo milisegundo: ' + (v.motivo || ''));
+        const r0 = await api.searchEvents(S.tA, { cameraIds: [S.camA.id], clases: ['movimiento'], offset: -5, limit: 3 }); const r1 = await api.searchEvents(S.tA, { cameraIds: [S.camA.id], clases: ['movimiento'], limit: 3 });
+        assert(JSON.stringify(r0.items.map(x => x.id)) === JSON.stringify(r1.items.map(x => x.id)), 'offset negativo equivale a 0');
+        return 'derivado con org/hash/autor forzados · aprobado protegido · ' + v.registros + ' registros encadenados';
+      });
+      await caso('Central de alarmas: prioridad, SOP, SLA, asignación, cierre y métricas', async () => {
+        const f = (await api.listFindings(S.tA)).find(x => x.frameId) || S.hallazgo;
+        const a = await api.alarmFromFinding(S.tA, f.id);
+        assert(a.prioridad && a.slaS > 0 && a.pasos.length >= 1 && a.estado === 'nueva', 'alarma con prioridad, SLA y procedimiento');
+        assert((await api.alarmFromFinding(S.tA, f.id)).id === a.id, 'no se duplica una alarma abierta del mismo hallazgo');
+        await expectErr(api.updateAlert(S.tDir, a.id, { accion: 'reconocer' }), 'PROHIBIDO');
+        await expectErr(api.updateAlert(S.tB, a.id, { accion: 'reconocer' }), 'NO_ENCONTRADO');
+        await api.updateAlert(S.tOp, a.id, { accion: 'reconocer' });
+        await expectErr(api.updateAlert(S.tOp, a.id, { accion: 'reconocer' }), 'CONFLICTO');
+        await api.updateAlert(S.tOp, a.id, { accion: 'paso', indice: 0, hecho: true });
+        await api.updateAlert(S.tOp, a.id, { accion: 'asignar', asignadoA: 'supervisor@norte.demo' });
+        await expectErr(api.updateAlert(S.tOp, a.id, { accion: 'asignar', asignadoA: 'admin@sur.demo' }), 'VALIDACION');
+        await expectErr(api.updateAlert(S.tOp, a.id, { accion: 'cerrar', resolucion: 'real', nota: '' }), 'VALIDACION');
+        const c = await api.updateAlert(S.tOp, a.id, { accion: 'cerrar', resolucion: 'falsa' });
+        assert(c.estado === 'cerrada' && c.dentroSLA === true && c.historial.length === 4, 'cerrada dentro del SLA con historial de 4 acciones');
+        await expectErr(api.updateAlert(S.tOp, a.id, { accion: 'reabrir' }), 'PROHIBIDO');
+        const st = await api.alarmStats(S.tA);
+        assert(st.cumplimientoSLA === 1 && st.tasaFalsas === 1 && st.mttaS != null, 'métricas MTTA, SLA y falsas alarmas');
+        const ultimaAud = (await api.auditLog(S.tA, { limit: 1 })).items[0]; assert(ultimaAud.accion === 'alarma.cerrar', 'cierre auditado');
+        return 'prioridad ' + a.prioridad + ' · SLA ' + a.slaS + ' s · ' + a.pasos.length + ' pasos · MTTA ' + st.mttaS + ' s';
+      });
+      await caso('Plano del sitio: permisos y aislamiento de cámaras', async () => {
+        const camB = (await api.listCameras(S.tB))[0];
+        await expectErr(api.savePlan(S.tOp, { camaras: {} }), 'PROHIBIDO');
+        const p = await api.savePlan(S.tA, { camaras: { [S.camA.id]: { x: 0.3, y: 1.7, ang: -90, fov: 500 }, ...(camB ? { [camB.id]: { x: 0.5, y: 0.5 } } : {}) } });
+        assert(p.camaras[S.camA.id].y === 1 && p.camaras[S.camA.id].ang === 270 && p.camaras[S.camA.id].fov === 180, 'valores normalizados');
+        assert(!camB || !p.camaras[camB.id], 'una cámara de otra organización se ignora');
+        await expectErr(api.savePlan(S.tA, { imagen: 'data:image/svg+xml;base64,PHN2Zz4=' }), 'VALIDACION');
+        assert((await api.getPlan(S.tB)) === null, 'la otra organización no ve el plano');
+        return 'plano guardado con 1 cámara; SVG rechazado (evita scripts incrustados)';
+      });
+      await caso('Búsqueda por apariencia: firma de ropa, similitud y aislamiento', async () => {
+        const AN = V.analitica;
+        const cv = document.createElement('canvas'); cv.width = 200; cv.height = 200; const g = cv.getContext('2d');
+        const persona = (sup, inf) => { g.fillStyle = '#777'; g.fillRect(0, 0, 200, 200); g.fillStyle = sup; g.fillRect(60, 40, 80, 60); g.fillStyle = inf; g.fillRect(60, 110, 80, 80); return AN.firmaApariencia(g.getImageData(0, 0, 200, 200), { x: 0.25, y: 0, w: 0.5, h: 1 }); };
+        const rojoAzul = persona('#c8202a', '#1e3a8a'), rojoAzul2 = persona('#b81c24', '#243f92'), verdeNegro = persona('#2e9e3e', '#111111');
+        const s1 = AN.similitud(rojoAzul, rojoAzul2), s2 = AN.similitud(rojoAzul, verdeNegro);
+        assert(s1 > 0.9 && s2 < 0.5, 'similar ' + s1 + ' / distinta ' + s2);
+        const org = api.session(S.tA).org; const base = { org, recordingId: S.rec.id, cameraId: S.camA.id, clase: 'person', etiqueta: 'Persona', inicio: 1, fin: 2, n: 2, score: 0.9, estado: 'sugerido', motor: 'coco-ssd+seguimiento', creadoEn: Date.now() };
+        await db.putMany('findings', [Object.assign({}, base, { id: 'hal_ap1', trackId: 1, firma: rojoAzul }), Object.assign({}, base, { id: 'hal_ap2', trackId: 2, firma: rojoAzul2 }), Object.assign({}, base, { id: 'hal_ap3', trackId: 3, firma: verdeNegro })]);
+        const r = await api.searchAppearance(S.tA, { findingId: 'hal_ap1', umbral: 0.8 });
+        assert(r.items.length === 1 && r.items[0].id === 'hal_ap2', 'encuentra sólo la persona vestida igual');
+        await expectErr(api.searchAppearance(S.tB, { findingId: 'hal_ap1' }), 'NO_ENCONTRADO');
+        await expectErr(api.searchAppearance(S.tDir, { findingId: 'hal_ap1' }), 'PROHIBIDO');
+        return 'similitud misma ropa ' + Math.round(s1 * 100) + '% · distinta ' + Math.round(s2 * 100) + '%';
+      });
+      await caso('Sinopsis: planificación sin superposición y compresión del tiempo', async () => {
+        const pista = (id, t0, x) => ({ trackId: id, grupo: 'persona', clase: 'person', inicio: t0, fin: t0 + 9, trayectoria: Array.from({ length: 10 }, (_, k) => [t0 + k, 0, 0, x, 0.3, 0.1, 0.3]) });
+        const pistas = [pista(1, 10, 0.1), pista(2, 100, 0.5), pista(3, 200, 0.8), pista(4, 300, 0.1)];
+        const plan = V.sinopsis.planificar(V.sinopsis.filtrar(pistas, { grupos: ['persona'] }));
+        const off = Object.fromEntries(plan.items.map(i => [i.pista.trackId, i.offset]));
+        assert(off[1] === 0 && off[2] === 0 && off[3] === 0, 'objetos en lugares distintos comparten el instante 0');
+        assert(off[4] >= 10, 'el objeto en el mismo lugar se desplaza para no superponerse (offset ' + off[4] + ')');
+        assert(plan.len <= 21 && plan.original >= 299, 'actividad de ' + plan.original + ' s condensada en ' + plan.len + ' s');
+        return plan.original + ' s → ' + plan.len + ' s (×' + plan.compresion + ')';
+      });
+      await caso('Horarios de reglas y ZIP de evidencia verificable', async () => {
+        const hz = V.horario.validar({ dias: [5], desde: '22:00', hasta: '06:00' });
+        assert(V.horario.activo(hz, Date.parse('2026-09-26T04:00:00Z'), 'America/Bogota') === true, 'viernes 23:00 activo');
+        assert(V.horario.activo(hz, Date.parse('2026-09-26T10:00:00Z'), 'America/Bogota') === true, 'sábado 05:00 (franja del viernes) activo');
+        assert(V.horario.activo(hz, Date.parse('2026-09-26T15:00:00Z'), 'America/Bogota') === false, 'sábado 10:00 inactivo');
+        await expectErr(api.createRule(S.tA, { cameraId: S.camA.id, clase: 'persona', duracionMin: 60, confirmado: true, horario: { desde: '25:00', hasta: '06:00' } }), 'VALIDACION');
+        const r = await api.createRule(S.tA, { cameraId: S.camA.id, clase: 'intrusion', duracionMin: 7 * 1440, confirmado: true, horario: { dias: [1, 2, 3, 4, 5], desde: '22:00', hasta: '06:00' } });
+        assert(r.horario && r.hasta - r.desde === 7 * 86400e3, 'regla con horario vigente 7 días');
+        await api.cancelRule(S.tA, r.id);
+        assert(V.crc32(new TextEncoder().encode('123456789')) === 0xCBF43926, 'CRC-32 estándar');
+        const z = new Uint8Array(await (await V.zip([{ nombre: 'a.txt', datos: 'hola' }, { nombre: 'b/c.bin', datos: new Uint8Array([9, 8, 7]) }])).arrayBuffer());
+        const dv = new DataView(z.buffer); const eocd = z.length - 22;
+        assert(dv.getUint32(0, true) === 0x04034b50 && dv.getUint32(eocd, true) === 0x06054b50 && dv.getUint16(eocd + 10, true) === 2, 'estructura ZIP válida con 2 entradas');
+        await expectErr(V.zip([{ nombre: 'a', datos: 'x' }, { nombre: 'a', datos: 'y' }]), 'VALIDACION');
+        return 'franja nocturna que cruza la medianoche · ZIP ' + z.length + ' bytes';
+      });
+      await caso('Paquete de evidencia: manifiesto, SHA256SUMS, custodia y permisos', async () => {
+        const c = await api.createCase(S.tA, { titulo: 'Paquete' });
+        await api.addEvidence(S.tA, c.id, { tipo: 'hallazgo', refId: (await api.listFindings(S.tA)).find(x => x.frameId).id });
+        if (S.clip) await api.addEvidence(S.tA, c.id, { tipo: 'clip', refId: S.clip.id });
+        await expectErr(api.casePackage(S.tOp, c.id), 'PROHIBIDO');
+        await expectErr(api.casePackage(S.tB, c.id), 'NO_ENCONTRADO');
+        const p = await V.paquete.construir(api, S.tA, c.id, {});
+        const buf = new Uint8Array(await p.blob.arrayBuffer()); const txt = new TextDecoder().decode(buf);
+        assert(txt.includes('manifiesto.json') && txt.includes('SHA256SUMS.txt') && txt.includes('custodia/cadena_de_custodia.csv'), 'contiene manifiesto, sumas y custodia');
+        const ev = p.manifiesto.evidencias.filter(e => e.archivo);
+        assert(ev.length >= 1 && ev.every(e => e.coincideRegistro !== false), 'hashes de binarios coinciden con el registro');
+        const pv = await V.paquete.construir(api, S.tA, c.id, { privacidad: true });
+        assert(!S.clip || pv.omitidos.some(o => /privacidad/.test(o.motivo)), 'en modo privacidad se omite el clip sin redactar');
+        return p.archivos + ' archivos · ' + V.fmtBytes(p.blob.size) + ' · SHA-256 ' + p.sha256.slice(0, 12) + '…';
       });
       if (opts.ia) await caso('Motor IA local: detecta persona real en la ventana correcta', async () => {
         await V.ia.cargar();

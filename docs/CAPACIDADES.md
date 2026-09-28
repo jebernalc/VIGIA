@@ -6,7 +6,7 @@ Estados: **Implementado y verificado** (prueba automática) · **Implementado, v
 |---|---|---|
 | Inicio de sesión local, contraseñas aleatorias PBKDF2, selección de organización | Implementado y verificado | Prueba «Autenticación». Bloqueo tras 5 intentos fallidos (60 s). |
 | Aislamiento multicliente en cada operación de la API interna | Implementado y verificado | Prueba «Aislamiento»: 20+ accesos cruzados denegados. Aislamiento lógico: los datos viven en el navegador del equipo. |
-| Permisos por rol (5 roles, 20 permisos) aplicados en la API | Implementado y verificado | Prueba «Permisos por rol». |
+| Permisos por rol (5 roles, 21 permisos) aplicados en la API | Implementado y verificado | Prueba «Permisos por rol». |
 | Cámaras, sedes, zonas, grupos, zona horaria IANA, zonas de exclusión | Implementado, verificación parcial | CRUD verificado en pruebas; editor de zonas probado manualmente. |
 | Importación MP4/MOV/WebM con validación de bytes, límite de tamaño y SHA-256 | Implementado y verificado | Original inmutable (no se puede sobrescribir) y verificable. |
 | Metadatos: duración, códec, resolución, fps, audio, hora del contenedor | Implementado y verificado | Hora de captura: declarada > contenedor > desconocida. Nunca se deduce de la carga. |
@@ -16,7 +16,7 @@ Estados: **Implementado y verificado** (prueba automática) · **Implementado, v
 | Fotograma auténtico a resolución nativa con hash | Implementado y verificado | PNG sin pérdida desde la decodificación del navegador. |
 | Clip MP4 sin recodificar (copia de flujo) con límites reales y hash | Implementado y verificado | Verificado también con ffprobe/ffmpeg en Node (H.264/AAC y VP9/Opus). |
 | Clip de WebM / MP4 fragmentado mediante MediaRecorder | Implementado, verificación parcial | Etiquetado como RECODIFICADO; tiempo real 1×. |
-| Chat en español con intérprete determinista y tarjeta de interpretación editable | Implementado y verificado | 21 pruebas unitarias del intérprete + recorrido principal. |
+| Chat en español con intérprete determinista y tarjeta de interpretación editable | Implementado y verificado | 35 pruebas unitarias del intérprete + recorrido principal. |
 | Consultas de seguimiento («amplía cinco minutos antes», «ahora solo vehículos») | Implementado y verificado |  |
 | Cobertura, índice pendiente y respuestas honestas sin evidencia | Implementado y verificado | Prueba «Respuestas honestas». |
 | Cámara web en vivo (getUserMedia) con edad del cuadro y búfer de 5 min | Implementado y verificado | Probado con el dispositivo simulado de Chromium (primer cuadro ≈1,2 s). Con cámara física: requiere permiso del navegador. |
@@ -36,6 +36,13 @@ Estados: **Implementado y verificado** (prueba automática) · **Implementado, v
 | Analítica: búsqueda por color de prenda | Implementado, verificación parcial | Funciona en el video de casos (retratos); falta validar con cuerpos completos en cámaras reales. |
 | Analítica: posible humo | Implementado, verificación parcial | EXPERIMENTAL y advertido en cada respuesta; no reemplaza detectores certificados. |
 | Analítica en vivo con reglas y alertas (puerta, merodeo, intrusión, etc.) | Implementado, verificación parcial | Motor en cada cuadro en vivo; alertas por regla. Probado con emulación en la prueba de interfaz. |
+| Central de alarmas: prioridad, SLA, procedimiento (SOP), asignación, resolución, MTTA/MTTR | Implementado y verificado | Prueba «Central de alarmas» (permisos, aislamiento, SLA, historial, auditoría) y recorrido de interfaz. |
+| Sinopsis de video (resumen condensado con hora real y clic al original) | Implementado y verificado | Prueba de planificación sin superposición y recorrido con IA real: 2:49 de actividad → 1:33. Derivado sintético etiquetado. |
+| Búsqueda por apariencia entre cámaras (ropa, no biometría) | Implementado, verificación parcial | Prueba unitaria y con IA real (la misma persona en 3 pistas: 100%). Sensible a iluminación; falta validar en cámaras reales. |
+| Plano del sitio con posición, orientación, campo de visión y estado por cámara | Implementado y verificado | Prueba de permisos/aislamiento y recorrido de interfaz. Imagen PNG/JPEG/WebP (SVG rechazado). |
+| Redacción de privacidad: clips e imágenes con personas pixeladas | Implementado, verificación parcial | Recorrido de interfaz genera el clip con hash propio; depende de las detecciones IA (muestreo 1 s, margen ±1 s). |
+| Paquete de evidencia ZIP con manifiesto, SHA256SUMS, custodia e informe | Implementado y verificado | Recorrido de interfaz: todos los SHA-256 verificados con Python fuera del navegador. |
+| Reglas y zonas con horario (franjas que cruzan medianoche, días, zona horaria de la cámara) | Implementado y verificado | Prueba «Horarios» y 2 pruebas del intérprete. |
 | Conexión RTSP | Fase posterior | Un navegador no abre RTSP: requiere agente de borde (ARCHITECTURE.md). |
 | Servidor multiusuario (FastAPI + PostgreSQL + cola distribuida) | Fase posterior | Diseñado en ARCHITECTURE.md / API.md; esta entrega es la edición local. |
 | Búsqueda semántica con embeddings visuales | Fase posterior | No implementada: no se ofrece en la interfaz. |

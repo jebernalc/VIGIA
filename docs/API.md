@@ -124,9 +124,25 @@ Respuesta: `{texto, plan, tarjetas[], estado}`. `plan` = interpretación editabl
 
 | Método | REST | Permiso |
 |---|---|---|
-| `createRule(t,{cameraId, clase, duracionMin, destinatario, confirmado:true})` | `POST /api/v1/reglas` | reglas.crear; sin `confirmado` → 428 |
-| `listRules`, `cancelRule`, `listAlerts`, `ackAlert` | `/api/v1/reglas`, `/api/v1/alertas` | — |
+| `createRule(t,{cameraId, clase, duracionMin, destinatario, horario?, prioridad?, confirmado:true})` | `POST /api/v1/reglas` | reglas.crear; sin `confirmado` → 428. `horario = {dias:[0..6], desde:'HH:MM', hasta:'HH:MM'}` (zona de la cámara; admite cruzar medianoche); con horario la vigencia llega a 30 días |
+| `listRules`, `listAlerts` | `GET /api/v1/reglas`, `GET /api/v1/alarmas` | camaras.ver |
+| `cancelRule` | `DELETE /api/v1/reglas/{id}` | reglas.crear |
+| `ackAlert` (= `updateAlert` «reconocer») | `POST /api/v1/alarmas/{id}/reconocimiento` | alarmas.gestionar |
 | `getPolicy`, `savePolicy`, `retentionPreview` | `/api/v1/politicas/retencion` | admin.politicas |
+
+## Central de alarmas, plano, apariencia y paquete de evidencia (v1.1)
+
+| Método | REST | Permiso |
+|---|---|---|
+| `updateAlert(t, id, {accion:'reconocer'\|'asignar'\|'paso'\|'nota'\|'cerrar'\|'reabrir', …})` | `POST /api/v1/alarmas/{id}/acciones` | alarmas.gestionar (reabrir: incidentes.confirmar). Cerrar exige `resolucion` ∈ real/falsa/prueba/duplicada; «real» exige nota. Reconocer dos veces → 409 |
+| `alarmFromFinding(t, findingId, prioridad?)` | `POST /api/v1/hallazgos/{id}/alarma` | alarmas.gestionar; no duplica una alarma abierta |
+| `alarmStats(t, desdeMs?)` | `GET /api/v1/alarmas/indicadores` | indicadores.ver → `{total, abiertas, vencidas, mttaS, mttrS, cumplimientoSLA, tasaFalsas, porEstado, porPrioridad}` |
+| `getPlan(t)` / `savePlan(t,{nombre, imagen?, camaras:{camId:{x,y,ang,fov,alcance}}})` | `GET/PUT /api/v1/plano` | camaras.ver / camaras.gestionar. Imagen sólo PNG/JPEG/WebP ≤ 3 MB; cámaras de otra organización se ignoran |
+| `searchAppearance(t,{findingId\|firma, umbral 0.5–0.99, cameraIds?, limit})` | `POST /api/v1/busquedas/apariencia` | medios.ver. Sin firma → `SIN_FIRMA` |
+| `casePackage(t, caseId, {incluirOriginales, privacidad})` | `GET /api/v1/expedientes/{id}/paquete` | evidencia.descargar; auditado |
+| `privacyBoxes(t, recordingId, clases?)` | `GET /api/v1/grabaciones/{id}/privacidad` | medios.ver |
+
+Prioridad y SLA de reconocimiento por defecto: crítica 60 s (humo) · alta 2 min (intrusión, manipulación, objeto abandonado) · media 5 min · baja 15 min. Cada alarma copia el procedimiento (SOP) de su tipo y guarda un historial de acciones.
 | `metrics(t)` | `GET /api/v1/indicadores` | indicadores.ver |
 | `auditLog(t,{limit})`, `verifyAudit(t)` | `GET /api/v1/auditoria`, `POST /api/v1/auditoria/verificacion` | auditoria.ver |
 | `listMembers`, `createUser` | `/api/v1/miembros` | admin.usuarios |

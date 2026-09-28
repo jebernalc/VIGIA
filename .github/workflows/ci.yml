@@ -1,0 +1,21 @@
+name: Calidad (lint y pruebas unitarias)
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: node tests/node_nlp.test.cjs
+      - name: Compilación reproducible (app/VIGIA.html debe coincidir con el código fuente)
+        run: |
+          node tools/build.mjs
+          git diff --stat --exit-code app/VIGIA.html

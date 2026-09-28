@@ -34,6 +34,7 @@
     'informes.aprobar': ['supervisor', 'admin'],
     'reglas.crear': ['operador', 'supervisor', 'admin'],
     'vivo.usar': ['operador', 'supervisor', 'investigador', 'admin'],
+    'alarmas.gestionar': ['operador', 'supervisor', 'investigador', 'admin'],
     'auditoria.ver': ['supervisor', 'admin'],
     'admin.usuarios': ['admin'],
     'admin.politicas': ['admin'],
@@ -82,7 +83,7 @@
     const USOS = ['restringida', 'no_parqueo', 'ocupacion', 'general'];
     const zonas = (Array.isArray(a.zonas) ? a.zonas : []).slice(0, 20).map((z, i) => {
       if (!USOS.includes(z.uso)) throw E('VALIDACION', 'Uso de zona inválido: ' + z.uso);
-      return { id: txt(z.id || 'z' + i, 30), nombre: txt(z.nombre || 'Zona ' + (i + 1)), uso: z.uso, rect: R01(z.rect || {}), umbral: z.umbral != null ? num(z.umbral, 1, 500, 5) : undefined, merodeoS: z.merodeoS != null ? num(z.merodeoS, 3, 3600, 20) : undefined, parqueoS: z.parqueoS != null ? num(z.parqueoS, 5, 86400, 30) : undefined };
+      return { id: txt(z.id || 'z' + i, 30), nombre: txt(z.nombre || 'Zona ' + (i + 1)), uso: z.uso, rect: R01(z.rect || {}), horario: z.horario ? V.horario.validar(z.horario) : undefined, umbral: z.umbral != null ? num(z.umbral, 1, 500, 5) : undefined, merodeoS: z.merodeoS != null ? num(z.merodeoS, 3, 3600, 20) : undefined, parqueoS: z.parqueoS != null ? num(z.parqueoS, 5, 86400, 30) : undefined };
     });
     const lineas = (Array.isArray(a.lineas) ? a.lineas : []).slice(0, 10).map((l, i) => ({ id: txt(l.id || 'l' + i, 30), nombre: txt(l.nombre || 'Línea ' + (i + 1)), a: P01(l.a || {}), b: P01(l.b || {}), sentidoEntrada: +l.sentidoEntrada === -1 ? -1 : 1, clase: ['persona', 'vehiculo'].includes(l.clase) ? l.clase : undefined }));
     const puertas = (Array.isArray(a.puertas) ? a.puertas : []).slice(0, 10).map((p, i) => ({ id: txt(p.id || 'p' + i, 30), nombre: txt(p.nombre || 'Puerta ' + (i + 1)), rect: R01(p.rect || {}), puertaS: p.puertaS != null ? num(p.puertaS, 1, 86400, 10) : undefined, umbral: p.umbral != null ? num(p.umbral, 0.05, 0.95, 0.5) : undefined }));
@@ -188,29 +189,36 @@
         const metaK = 'audit_last_' + ctx.org;
         const last = await this.db.get('meta', metaK);
         const prev = last ? last.hash : '0'.repeat(64);
-        const rec = { id: V.id('aud'), org: ctx.org, userId: ctx.userId, email: ctx.email, accion, recurso, recursoId: recursoId || null, detalle: detalle || {}, ts: Date.now(), prev };
+        const rec = { id: V.id('aud'), org: ctx.org, userId: ctx.userId, email: ctx.email, accion, recurso, recursoId: recursoId || null, detalle: detalle || {}, ts: Date.now(), prev, seq: ((last && last.seq) || 0) + 1 };
         rec.hash = await V.sha256Text(prev + '|' + JSON.stringify([rec.id, rec.org, rec.userId, rec.accion, rec.recurso, rec.recursoId, rec.detalle, rec.ts]));
         await this.db.put('audit', rec);
-        await this.db.put('meta', { k: metaK, hash: rec.hash });
+        await this.db.put('meta', { k: metaK, hash: rec.hash, seq: rec.seq });
         return rec;
       };
       const p = this._auditLock.then(run, run); this._auditLock = p.catch(() => {}); return p;
     }
     async auditLog(token, opts) {
       const ctx = this._ctx(token); this._need(ctx, 'auditoria.ver');
-      const all = (await this.db.by('audit', 'org', ctx.org)).sort((a, b) => b.ts - a.ts || (b.id > a.id ? 1 : -1));
+      const all = (await this.db.by('audit', 'org', ctx.org)).sort((a, b) => (b.seq || 0) - (a.seq || 0) || b.ts - a.ts || (b.id > a.id ? 1 : -1));
       const lim = V.clamp((opts && opts.limit) || 200, 1, 1000);
       return { items: all.slice(0, lim), total: all.length };
     }
     async verifyAudit(token) {
       const ctx = this._ctx(token); this._need(ctx, 'auditoria.ver');
-      const all = (await this.db.by('audit', 'org', ctx.org)).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
-      let prev = '0'.repeat(64);
-      for (const r of all) {
+      // Se recorre la cadena por enlaces (prev → hash), no por reloj: dos registros del mismo milisegundo no alteran el orden.
+      const all = await this.db.by('audit', 'org', ctx.org);
+      const porPrev = new Map();
+      for (const r of all) { if (porPrev.has(r.prev)) return { ok: false, rotoEn: r.id, registros: all.length, motivo: 'bifurcación de la cadena' }; porPrev.set(r.prev, r); }
+      let prev = '0'.repeat(64), n = 0; const vistos = new Set();
+      while (porPrev.has(prev) && n <= all.length) {
+        const r = porPrev.get(prev); vistos.add(r.id);
         const h = await V.sha256Text(r.prev + '|' + JSON.stringify([r.id, r.org, r.userId, r.accion, r.recurso, r.recursoId, r.detalle, r.ts]));
-        if (r.prev !== prev || h !== r.hash) return { ok: false, rotoEn: r.id, registros: all.length };
-        prev = r.hash;
+        if (h !== r.hash) return { ok: false, rotoEn: r.id, registros: all.length, motivo: 'contenido alterado' };
+        prev = r.hash; n++;
       }
+      if (n !== all.length) { const huerf = all.find(r => !vistos.has(r.id)); return { ok: false, rotoEn: huerf ? huerf.id : null, registros: all.length, motivo: 'registros fuera de la cadena (' + (all.length - n) + ')' }; }
+      const meta = await this.db.get('meta', 'audit_last_' + ctx.org);
+      if (meta && meta.hash !== prev) return { ok: false, rotoEn: null, registros: all.length, motivo: 'el último eslabón no coincide (registros eliminados al final)' };
       return { ok: true, registros: all.length };
     }
 
@@ -272,7 +280,7 @@
       if (tipo === 'rtsp') {
         rtspUrl = String(data.rtspUrl || '').trim();
         if (!/^rtsps?:\/\/[^\s]+$/i.test(rtspUrl)) throw E('VALIDACION', 'URL RTSP inválida (rtsp://…)');
-        rtspUrl = rtspUrl.replace(/\/\/([^:@\/]+):([^@\/]+)@/, '//$1:***@'); // nunca guardar la contraseña en claro
+        rtspUrl = rtspUrl.replace(/\/\/([^:@/]+):([^@/]+)@/, '//$1:***@'); // nunca guardar la contraseña en claro
       }
       const mascaras = Array.isArray(data.mascaras) ? data.mascaras.slice(0, 10).map(m => ({ x: V.clamp(+m.x || 0, 0, 1), y: V.clamp(+m.y || 0, 0, 1), w: V.clamp(+m.w || 0, 0, 1), h: V.clamp(+m.h || 0, 0, 1), nombre: String(m.nombre || '').slice(0, 40) })) : [];
       const analitica = data.analitica !== undefined ? validarAnalitica(data.analitica) : undefined;
@@ -373,6 +381,7 @@
     async deleteRecording(token, id) {
       const ctx = this._ctx(token); this._need(ctx, 'grabaciones.eliminar');
       const r = await this._own('recordings', id, ctx);
+      if ((await this.db.by('jobs', 'org', ctx.org)).some(j => j.recordingId === id && ['pendiente', 'en_curso'].includes(j.estado))) throw E('CONFLICTO', 'Hay una indexación en curso para esta grabación. Espere a que termine.');
       const pol = await this.db.get('policies', 'pol_' + ctx.org);
       const evs = await this.db.by('evidence', 'org', ctx.org);
       const ders = (await this.db.by('derivatives', 'recordingId', id)).map(d => d.id);
@@ -389,7 +398,7 @@
     }
 
     // =============== trabajos ===============
-    async listJobs(token) { const ctx = this._ctx(token); return (await this.db.by('jobs', 'org', ctx.org)).sort((a, b) => b.creadoEn - a.creadoEn); }
+    async listJobs(token) { const ctx = this._ctx(token); this._need(ctx, 'camaras.ver'); return (await this.db.by('jobs', 'org', ctx.org)).sort((a, b) => b.creadoEn - a.creadoEn); }
     async requeueAnalysis(token, recordingId, opciones) {
       const ctx = this._ctx(token); this._need(ctx, 'grabaciones.cargar');
       const rec = await this._own('recordings', recordingId, ctx);
@@ -443,6 +452,7 @@
       if (!['revisado', 'descartado', 'confirmado', 'sugerido'].includes(estado)) throw E('VALIDACION', 'Estado inválido');
       this._need(ctx, estado === 'confirmado' ? 'incidentes.confirmar' : 'hallazgos.revisar');
       const f = await this._own('findings', id, ctx);
+      if (f.estado === 'confirmado') this._need(ctx, 'incidentes.confirmar'); // sólo quien confirma puede revertir una confirmación
       const antes = f.estado;
       f.estado = estado; f.revisadoPor = ctx.email; f.revisadoEn = Date.now(); if (nota) f.notaRevision = String(nota).slice(0, 500);
       await this.db.put('findings', f);
@@ -476,7 +486,7 @@
         fs.forEach(f => resultados.push(f));
       }
       resultados.sort((a, b) => (a.tAbs || 0) - (b.tAbs || 0) || a.inicio - b.inicio);
-      const lim = V.clamp(q.limit || 50, 1, 200), off = q.offset || 0;
+      const lim = V.clamp(Math.floor(+q.limit) || 50, 1, 200), off = Math.max(0, Math.floor(+q.offset) || 0);
       return { total: resultados.length, items: resultados.slice(off, off + lim), offset: off, limit: lim, cobertura };
     }
 
@@ -513,11 +523,12 @@
       const id = V.id(info.tipo === 'clip' ? 'clip' : 'fot');
       const sha256 = await V.sha256Blob(blob);
       const blobKey = await this._putBlob(ctx, 'derivados', id, blob);
-      const d = Object.assign({
+      // Los campos de custodia (org, hashes, autor, fechas) los fija el servidor y nunca el llamador.
+      const d = Object.assign({ transformacion: 'ninguna' }, info, {
         id, org: ctx.org, recordingId: rec ? rec.id : null, cameraId: rec ? rec.cameraId : info.cameraId,
         origenSha256: rec ? rec.sha256 : null, sha256, size: blob.size, mime: blob.type, blobKey,
-        creadoPor: ctx.email, creadoEn: Date.now(), transformacion: info.transformacion || 'ninguna'
-      }, info);
+        creadoPor: ctx.email, creadoEn: Date.now()
+      });
       d.nombre = V.safeName(info.nombre || (id + (d.mime.includes('mp4') ? '.mp4' : d.mime.includes('webm') ? '.webm' : '.png')));
       await this.db.put('derivatives', d);
       await this._audit(ctx, d.tipo + '.crear', 'derivado', id, { origen: recordingId, sha256, inicio: d.inicio, fin: d.fin, metodo: d.metodo });
@@ -583,6 +594,7 @@
     async updateCase(token, id, patch) {
       const ctx = this._ctx(token); this._need(ctx, 'expedientes.crear');
       const c = await this._own('cases', id, ctx);
+      if (c.aprobacion === 'aprobado') this._need(ctx, 'informes.aprobar'); // un expediente aprobado sólo lo modifica quien aprueba
       if (patch.estado && ['abierto', 'en_revision', 'cerrado'].includes(patch.estado)) c.estado = patch.estado;
       if (patch.aprobacion) {
         if (!['borrador', 'pendiente', 'aprobado'].includes(patch.aprobacion)) throw E('VALIDACION', 'Aprobación inválida');
@@ -598,7 +610,7 @@
     async addEvidence(token, caseId, { tipo, refId, clasificacion, nota }) {
       const ctx = this._ctx(token); this._need(ctx, 'expedientes.crear');
       await this._own('cases', caseId, ctx);
-      const store = { hallazgo: 'findings', clip: 'derivatives', fotograma: 'derivatives', grabacion: 'recordings' }[tipo];
+      const store = { hallazgo: 'findings', clip: 'derivatives', fotograma: 'derivatives', sinopsis: 'derivatives', grabacion: 'recordings' }[tipo];
       if (!store) throw E('VALIDACION', 'Tipo de evidencia inválido');
       const ref = await this._own(store, refId, ctx);
       const dup = (await this.db.by('evidence', 'caseId', caseId)).find(e => e.refId === refId);
@@ -629,20 +641,22 @@
     }
 
     // =============== reglas y alertas ===============
-    async createRule(token, { cameraId, clase, duracionMin, destinatario, confirmado }) {
+    async createRule(token, { cameraId, clase, duracionMin, destinatario, confirmado, horario, prioridad }) {
       const ctx = this._ctx(token); this._need(ctx, 'reglas.crear');
       const cam = await this._own('cameras', cameraId, ctx);
       if (!['persona', 'vehiculo', 'movimiento'].includes(clase) && !(V.analitica && V.analitica.TIPOS[clase] && clase !== 'cruce_linea')) throw E('VALIDACION', 'Clase no soportada por las reglas: ' + clase);
-      const d = V.clamp(Math.round(+duracionMin || 30), 1, 24 * 60);
+      const hz = V.horario.validar(horario);
+      // con horario, la regla puede quedar vigente hasta 30 días (vigilancia recurrente); sin horario, hasta 24 h
+      const d = V.clamp(Math.round(+duracionMin || 30), 1, hz ? 30 * 24 * 60 : 24 * 60);
       if (!confirmado) throw E('CONFIRMACION', 'La activación de reglas requiere confirmación explícita.');
-      const r = { id: V.id('regla'), org: ctx.org, cameraId: cam.id, clase, desde: Date.now(), hasta: Date.now() + d * 60000, destinatario: String(destinatario || 'rol:supervisor').slice(0, 80), estado: 'activa', creadaPor: ctx.email, creadaEn: Date.now(), disparos: 0 };
+      const r = { id: V.id('regla'), org: ctx.org, cameraId: cam.id, clase, desde: Date.now(), hasta: Date.now() + d * 60000, destinatario: String(destinatario || 'rol:supervisor').slice(0, 80), estado: 'activa', creadaPor: ctx.email, creadaEn: Date.now(), disparos: 0, horario: hz, prioridad: V.alarmas && V.alarmas.SLA_S[prioridad] ? prioridad : undefined };
       await this.db.put('rules', r);
-      await this._audit(ctx, 'regla.activar', 'regla', r.id, { camara: cam.nombre, clase, minutos: d });
+      await this._audit(ctx, 'regla.activar', 'regla', r.id, { camara: cam.nombre, clase, minutos: d, horario: hz ? V.horario.texto(hz) : null });
       V.emit('rules:changed', { org: ctx.org });
       return r;
     }
     async listRules(token) {
-      const ctx = this._ctx(token);
+      const ctx = this._ctx(token); this._need(ctx, 'camaras.ver');
       const rs = await this.db.by('rules', 'org', ctx.org);
       for (const r of rs) if (r.estado === 'activa' && Date.now() > r.hasta) { r.estado = 'vencida'; await this.db.put('rules', r); }
       return rs.sort((a, b) => b.creadaEn - a.creadaEn);
@@ -653,13 +667,13 @@
       await this._audit(ctx, 'regla.cancelar', 'regla', id, {}); V.emit('rules:changed', { org: ctx.org }); return r;
     }
     async _fireAlert(org, rule, data) {
-      const a = Object.assign({ id: V.id('alerta'), org, ruleId: rule.id, cameraId: rule.cameraId, clase: rule.clase, destinatario: rule.destinatario, estado: 'nueva', ts: Date.now() }, data);
+      const a = Object.assign({ id: V.id('alerta'), org, ruleId: rule.id, cameraId: rule.cameraId, clase: rule.clase, destinatario: rule.destinatario, estado: 'nueva', ts: Date.now() }, V.alarmas ? V.alarmas.inicial(rule.clase, rule.prioridad) : {}, data);
       await this.db.put('alerts', a); rule.disparos = (rule.disparos || 0) + 1; rule.ultimoDisparo = Date.now(); await this.db.put('rules', rule);
       await this._audit({ org, userId: 'sistema', email: 'motor-reglas' }, 'alerta.disparar', 'regla', rule.id, { clase: rule.clase });
       V.emit('alerts:new', a); return a;
     }
-    async listAlerts(token) { const ctx = this._ctx(token); return (await this.db.by('alerts', 'org', ctx.org)).sort((a, b) => b.ts - a.ts); }
-    async ackAlert(token, id) { const ctx = this._ctx(token); const a = await this._own('alerts', id, ctx); a.estado = 'vista'; a.vistaPor = ctx.email; await this.db.put('alerts', a); return a; }
+    async listAlerts(token) { const ctx = this._ctx(token); this._need(ctx, 'camaras.ver'); return (await this.db.by('alerts', 'org', ctx.org)).sort((a, b) => b.ts - a.ts); }
+    async ackAlert(token, id) { const ctx = this._ctx(token); this._need(ctx, 'alarmas.gestionar'); const a = await this._own('alerts', id, ctx); if (a.estado !== 'nueva') return a; return this.updateAlert(token, id, { accion: 'reconocer' }); }
 
     // =============== políticas ===============
     async getPolicy(token) { const ctx = this._ctx(token); return this.db.get('policies', 'pol_' + ctx.org); }
@@ -671,7 +685,8 @@
       await this.db.put('policies', pol); await this._audit(ctx, 'politica.retencion', 'politica', pol.id, pol); return pol;
     }
     async retentionPreview(token) {
-      const ctx = this._ctx(token); const pol = await this.db.get('policies', 'pol_' + ctx.org);
+      const ctx = this._ctx(token); this._need(ctx, 'admin.politicas'); const pol = await this.db.get('policies', 'pol_' + ctx.org);
+      if (!pol) return [];
       const recs = await this.db.by('recordings', 'org', ctx.org); const evs = await this.db.by('evidence', 'org', ctx.org);
       const lim = Date.now() - pol.diasOriginales * 86400e3;
       return recs.filter(r => r.importadoEn < lim).map(r => ({ id: r.id, nombre: r.nombreArchivo, protegido: evs.some(e => e.recordingId === r.id) }));

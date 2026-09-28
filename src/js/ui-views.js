@@ -163,7 +163,7 @@
     const el = V.$('#orecs'); if (!el) return;
     const recs = await A.api.listRecordings(A.token); const cams = await A.api.listCameras(A.token);
     el.innerHTML = recs.length ? `<table class="table"><tr><th>Archivo</th><th>Cámara</th><th>Duración / formato</th><th>Hora de inicio</th><th>SHA-256</th><th>Índice</th><th></th></tr>${recs.map(r => { const c = cams.find(x => x.id === r.cameraId) || {}; return `<tr><td>${esc(r.nombreArchivo)}<div class="tiny muted">${V.fmtBytes(r.size)} · por ${esc(r.subidoPorEmail)}</div></td><td>${esc(c.codigo || '')}</td><td class="small">${V.fmtDur(r.duracion)} · ${esc(r.codec || '…')} ${r.ancho ? r.ancho + '×' + r.alto : ''}</td><td class="small">${r.horaInicio ? esc(V.fmtDateTime(r.horaInicio, c.tz)) + '<div class="tiny muted">' + esc(r.horaInicioFuente) + '</div>' : '<span class="badge warn">desconocida</span>'}</td><td class="hash" title="${esc(r.sha256)}">${esc(r.sha256.slice(0, 20))}…</td><td>${r.indexado ? '<span class="badge ok">indexado</span>' : r.estado === 'error' ? '<span class="badge bad">error</span>' : '<span class="badge info">pendiente</span>'}<div class="tiny muted">${esc((r.motores || []).join(', '))}${r.ultimoIndice ? ' · ' + r.ultimoIndice.hallazgos + ' hallazgos' : ''}</div></td>
-      <td><div class="row"><button class="btn xs" data-o="ver" data-id="${r.id}" data-cam="${r.cameraId}">${I.play} ver</button>${r.indexado && !(r.motores || []).some(m => m.startsWith('coco')) && A.api.can(A.token, 'grabaciones.cargar') ? `<button class="btn xs" data-o="reana" data-id="${r.id}">${I.cpu} analizar con IA</button>` : ''}${A.api.can(A.token, 'grabaciones.eliminar') ? `<button class="btn xs danger" data-o="del" data-id="${r.id}">eliminar</button>` : ''}</div></td></tr>`; }).join('')}</table>` : '<div class="empty">Sin grabaciones.</div>';
+      <td><div class="row"><button class="btn xs" data-o="ver" data-id="${r.id}" data-cam="${r.cameraId}">${I.play} ver</button>${r.indexado && (r.motores || []).some(m => m.startsWith('coco')) && A.api.can(A.token, 'medios.ver') ? `<button class="btn xs" data-pro="sinopsis" data-id="${r.id}">sinopsis</button>` : ''}${r.indexado && !(r.motores || []).some(m => m.startsWith('coco')) && A.api.can(A.token, 'grabaciones.cargar') ? `<button class="btn xs" data-o="reana" data-id="${r.id}">${I.cpu} analizar con IA</button>` : ''}${A.api.can(A.token, 'grabaciones.eliminar') ? `<button class="btn xs danger" data-o="del" data-id="${r.id}">eliminar</button>` : ''}</div></td></tr>`; }).join('')}</table>` : '<div class="empty">Sin grabaciones.</div>';
   };
 
   // ======================= HALLAZGOS =======================
@@ -230,7 +230,7 @@
       let html = '';
       try {
         if (ev.tipo === 'hallazgo') html = await A.views.chat.findingCard(await A.api.getFinding(A.token, ev.refId), true);
-        else if (ev.tipo === 'clip' || ev.tipo === 'fotograma') html = await A.views.chat.derivCard(await A.api.getDerivative(A.token, ev.refId));
+        else if (ev.tipo === 'clip' || ev.tipo === 'fotograma' || ev.tipo === 'sinopsis') html = await A.views.chat.derivCard(await A.api.getDerivative(A.token, ev.refId));
         else { const r = await A.api.getRecording(A.token, ev.refId); html = '<div class="card small">Grabación original ' + esc(r.nombreArchivo) + '<div class="hash">' + esc(r.sha256) + '</div></div>'; }
       } catch (e) { html = '<div class="alert-box bad small">No accesible: ' + esc(e.message) + '</div>'; }
       items.push(`<div><div class="row small" style="margin-bottom:4px"><span class="badge acc">${esc(V.reports.CLS[ev.clasificacion] || ev.clasificacion)}</span><span class="muted">añadida por ${esc(ev.agregadoPor)} · ${esc(V.fmtDateTime(ev.en))}</span></div>${html}${ev.nota ? '<div class="tiny muted" style="margin-top:4px">Nota: ' + esc(ev.nota) + '</div>' : ''}</div>`);
@@ -239,7 +239,7 @@
       <label class="f">Estado<select id="xs" ${w ? '' : 'disabled'}>${['abierto', 'en_revision', 'cerrado'].map(s => `<option ${caso.estado === s ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       <label class="f">Aprobación<select id="xa" ${w ? '' : 'disabled'}>${['borrador', 'pendiente', 'aprobado'].map(s => `<option ${caso.aprobacion === s ? 'selected' : ''} ${s === 'aprobado' && !A.api.can(A.token, 'informes.aprobar') ? 'disabled' : ''}>${s}</option>`).join('')}</select></label></div>
       <p class="small tx2">${esc(caso.descripcion || 'Sin descripción')}</p>
-      <div class="row"><button class="btn sm" id="xrh">Informe HTML</button><button class="btn sm" id="xrp">${I.dl} Informe PDF</button><span class="badge ok">${I.shield.replace('<svg', '<svg width="12" height="12"')} protegido ante borrado</span></div></div>
+      <div class="row"><button class="btn sm" id="xrh">Informe HTML</button><button class="btn sm" id="xrp">${I.dl} Informe PDF</button>${A.api.can(A.token, 'evidencia.descargar') ? `<button class="btn sm pri" data-pro="paquete" data-id="${caso.id}" title="ZIP con evidencias, manifiesto, SHA256SUMS y cadena de custodia">${I.shield} Paquete de evidencia</button>` : ''}<span class="badge ok">${I.shield.replace('<svg', '<svg width="12" height="12"')} protegido ante borrado</span></div></div>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:12px">
         <div class="card"><h2 class="h2">Evidencias (${evidencias.length})</h2><div class="col" style="margin-top:8px;gap:14px" id="xev">${items.join('') || '<div class="empty">Sin evidencias. Añádalas desde hallazgos, clips o fotogramas con «añadir al caso».</div>'}</div></div>
         <div class="col"><div class="card"><h2 class="h2">Notas e hipótesis</h2>${w ? `<div class="col" style="margin-top:8px"><textarea id="xn" placeholder="Escriba una nota o hipótesis. El texto se guarda como dato: nunca se interpreta como instrucción."></textarea><div class="row"><button class="btn sm" id="xan">Añadir nota</button><button class="btn sm" id="xah">Añadir hipótesis</button></div></div>` : ''}
@@ -250,7 +250,7 @@
     V.$('#xs').onchange = e => upd({ estado: e.target.value }); V.$('#xa').onchange = e => upd({ aprobacion: e.target.value });
     const addN = async tipo => { try { await A.api.addNote(A.token, caso.id, V.$('#xn').value, tipo); exp.detail(); } catch (e) { V.fail(e); } };
     if (V.$('#xan')) { V.$('#xan').onclick = () => addN('nota'); V.$('#xah').onclick = () => addN('hipotesis'); }
-    V.$('#xrh').onclick = async () => { try { const r = await V.reports.generar(A.api, A.token, caso.id); const u = URL.createObjectURL(new Blob([r.html], { type: 'text/html' })); if (!window.open(u, '_blank')) V.downloadBlob(new Blob([r.html], { type: 'text/html' }), caso.codigo + '_informe.html'); exp.detail(); } catch (e) { V.fail(e); } };
+    V.$('#xrh').onclick = async () => { try { const r = await V.reports.generar(A.api, A.token, caso.id); const u = URL.createObjectURL(new Blob([r.html], { type: 'text/html' })); setTimeout(() => URL.revokeObjectURL(u), 60000); if (!window.open(u, '_blank')) V.downloadBlob(new Blob([r.html], { type: 'text/html' }), caso.codigo + '_informe.html'); exp.detail(); } catch (e) { V.fail(e); } };
     V.$('#xrp').onclick = async () => { try { const r = await V.reports.pdf(A.api, A.token, caso.id); V.downloadBlob(r.blob, r.nombre); V.toast('PDF · SHA-256 ' + r.sha256.slice(0, 16) + '…'); exp.detail(); } catch (e) { V.fail(e); } };
     V.$('#xev').onclick = async e => { const b = e.target.closest('[data-act]'); if (!b) return; const dd = b.dataset; try { if (dd.act === 'dl') await A.download('derivado', dd.id); else if (dd.act === 'verif') { const r = await A.api.verifyDerivative(A.token, dd.id); V.toast(r.ok ? '✓ Hash verificado' : '✗ Hash no coincide', r.ok ? '' : 'bad'); } else if (dd.act === 'ver') { A.go('chat'); setTimeout(() => A.views.chat.openPlayer(dd.rec, +dd.t), 300); } } catch (err) { V.fail(err); } };
   };
@@ -288,7 +288,7 @@
   const ATABS = [['camaras', 'Cámaras y grupos'], ['usuarios', 'Usuarios y roles'], ['ia', 'Motor de visión'], ['retencion', 'Retención'], ['auditoria', 'Auditoría'], ['nube', 'Nube (Supabase)'], ['datos', 'Datos y almacenamiento'], ['pruebas', 'Pruebas automáticas'], ['capacidades', 'Capacidades']];
   adm.render = async function (m, tab) {
     adm.tab = tab || adm.tab || 'camaras';
-    m.innerHTML = `<div class="view"><h1 class="h1" style="margin-bottom:10px">Administración</h1><div class="tabs" id="atabs" style="padding:0;margin-bottom:14px">${ATABS.map(([k, l]) => `<button data-t="${k}" class="${adm.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="abody"></div></div>`;
+    m.innerHTML = `<div class="view"><h1 class="h1" style="margin-bottom:10px">Administración</h1><div class="tabs" id="atabs" style="padding:0;margin-bottom:14px">${ATABS.filter(([k]) => k !== 'nube' || A.api.can(A.token, 'admin.politicas')).map(([k, l]) => `<button data-t="${k}" class="${adm.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="abody"></div></div>`;
     V.$('#atabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) adm.render(m, b.dataset.t); };
     const body = V.$('#abody');
     try { await adm[adm.tab](body); } catch (e) { body.innerHTML = '<div class="alert-box bad">' + esc(V.errMsg(e)) + '</div>'; }
@@ -316,6 +316,7 @@
     if (recs[0]) { const fr = await A.api.listFrames(A.token, recs[0].id, 0, 5); if (fr[0]) img = await A.mediaURL('fotograma', fr[0].id); }
     const masks = (cam.mascaras || []).map(m => Object.assign({}, m));
     const draw = bg => { bg.querySelector('#mbox').querySelectorAll('.m').forEach(x => x.remove()); masks.forEach(m => { const d = document.createElement('div'); d.className = 'm'; Object.assign(d.style, { left: m.x * 100 + '%', top: m.y * 100 + '%', width: m.w * 100 + '%', height: m.h * 100 + '%' }); bg.querySelector('#mbox').appendChild(d); }); bg.querySelector('#mcount').textContent = masks.length + ' zona(s)'; };
+    const acM = new AbortController();
     const r = await V.modal('Zonas de exclusión · ' + cam.codigo, `<p class="small tx2">Arrastre sobre la imagen para excluir áreas del detector de movimiento (p. ej. sello de tiempo, árboles, pantallas). No afecta al original ni al motor IA.</p>
       ${img ? `<div class="maskedit" id="mbox"><img src="${img}" alt="Fotograma de referencia" draggable="false"></div>` : '<div class="empty" id="mbox" style="aspect-ratio:16/9;position:relative">Sin fotograma de referencia: importe un video primero. Puede dibujar igualmente.</div>'}
       <div class="row" style="margin-top:8px"><span id="mcount" class="small"></span><button class="btn xs" id="mclr">limpiar</button></div>`, [{ label: 'Cancelar', value: null }, { label: 'Guardar', cls: 'pri', value: true }], {
@@ -323,10 +324,11 @@
         const box = bg.querySelector('#mbox'); let st = null, cur = null; draw(bg);
         box.onmousedown = e => { const rc = box.getBoundingClientRect(); st = { x: (e.clientX - rc.left) / rc.width, y: (e.clientY - rc.top) / rc.height }; cur = { x: st.x, y: st.y, w: 0, h: 0 }; masks.push(cur); e.preventDefault(); };
         box.onmousemove = e => { if (!st) return; const rc = box.getBoundingClientRect(); const x = V.clamp((e.clientX - rc.left) / rc.width, 0, 1), y = V.clamp((e.clientY - rc.top) / rc.height, 0, 1); Object.assign(cur, { x: Math.min(st.x, x), y: Math.min(st.y, y), w: Math.abs(x - st.x), h: Math.abs(y - st.y) }); draw(bg); };
-        window.addEventListener('mouseup', () => { if (cur && (cur.w < 0.01 || cur.h < 0.01)) masks.splice(masks.indexOf(cur), 1); st = null; cur = null; draw(bg); });
+        window.addEventListener('mouseup', () => { if (!st) return; if (cur && (cur.w < 0.01 || cur.h < 0.01)) masks.splice(masks.indexOf(cur), 1); st = null; cur = null; draw(bg); }, { signal: acM.signal });
         bg.querySelector('#mclr').onclick = () => { masks.length = 0; draw(bg); };
       }
     });
+    acM.abort();
     if (!r) return;
     const cams = await A.api.listCameras(A.token); const full = cams.find(c => c.id === cam.id);
     try { await A.api.saveCamera(A.token, Object.assign({}, full, { mascaras: masks })); V.toast('Zonas guardadas. Se aplican en nuevos análisis y en vivo tras reconectar.'); adm.render(V.$('#main'), 'camaras'); } catch (e) { V.fail(e); }
@@ -370,7 +372,7 @@
     body.innerHTML = `<div class="card"><div class="row"><h2 class="h2 grow">Registro de auditoría (${r.total})</h2><button class="btn sm" id="av">${I.shield} Verificar cadena de hashes</button><button class="btn sm" id="ax">${I.dl} Exportar JSON</button></div>
       <p class="tiny muted">Cada registro incluye el SHA-256 del anterior: cualquier alteración o borrado intermedio rompe la cadena.</p>
       <div style="overflow:auto"><table class="table small"><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Recurso</th><th>Detalle</th><th>Hash</th></tr>${r.items.map(a => `<tr><td>${esc(V.fmtDateTime(a.ts))}</td><td>${esc(a.email)}</td><td class="mono">${esc(a.accion)}</td><td class="tiny">${esc(a.recurso)} ${esc(a.recursoId || '')}</td><td class="tiny mono" style="max-width:280px;word-break:break-all">${esc(JSON.stringify(a.detalle))}</td><td class="hash">${esc(a.hash.slice(0, 12))}</td></tr>`).join('')}</table></div></div>`;
-    V.$('#av').onclick = async () => { const v = await A.api.verifyAudit(A.token); V.toast(v.ok ? '✓ Cadena íntegra (' + v.registros + ' registros)' : '✗ Cadena rota en ' + v.rotoEn, v.ok ? '' : 'bad'); };
+    V.$('#av').onclick = async () => { const v = await A.api.verifyAudit(A.token); V.toast(v.ok ? '✓ Cadena íntegra (' + v.registros + ' registros)' : '✗ Cadena rota' + (v.rotoEn ? ' en ' + v.rotoEn : '') + (v.motivo ? ' · ' + v.motivo : ''), v.ok ? '' : 'bad'); };
     V.$('#ax').onclick = () => V.downloadBlob(new Blob([JSON.stringify(r.items, null, 2)], { type: 'application/json' }), 'vigia_auditoria.json');
   };
   adm.nube = async function (body) {
