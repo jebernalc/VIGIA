@@ -185,7 +185,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--acc);outline:none}
 <noscript>VIGÍA requiere JavaScript.</noscript>
 <div style="display:grid;place-items:center;height:100vh;font:14px system-ui;color:#a9b4c0;background:#0c0f13" id="splash">Iniciando VIGÍA…</div>
 <script src="vigia.config.js" onerror="void 0"></script>
-<script>/* VIGÍA edición local 1.0.0 · construido 2026-09-28T06:37:50.772Z · licencias de terceros: mp4box.js (BSD-3), jsPDF (MIT), supabase-js (MIT), TensorFlow.js y COCO-SSD (Apache-2.0) */</script>
+<script>/* VIGÍA edición local 1.0.0 · construido 2026-09-28T07:01:45.224Z · licencias de terceros: mp4box.js (BSD-3), jsPDF (MIT), supabase-js (MIT), TensorFlow.js y COCO-SSD (Apache-2.0) */</script>
 <script>/* src/js/util.js */
 /* VIGÍA · util.js — utilidades comunes (tiempo, hash, ids, HTML seguro, eventos) */
 (function () {
@@ -317,7 +317,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--acc);outline:none}
   V.toHex = toHex;
 
   // ---------- descargas ----------
-  V.downloadBlob = function (blob, name) {
+  // En el visor de claude.ai las descargas pasan por la capacidad «downloads» (el visor pide confirmación);
+  // fuera de él (archivo local o GitHub Pages) se usa un enlace de descarga normal.
+  let _dl = null; const dlCap = () => (_dl = _dl || (window.claude && window.claude.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null)));
+  V.downloadBlob = async function (blob, name) {
+    const d = await dlCap();
+    if (d) { try { await d.save({ filename: name, data: blob }); return true; } catch (e) { if (e && e.code === 'declined') return false; if (V.toast) V.toast('No se pudo guardar el archivo: ' + (e && (e.message || e.code)), 'warn'); return false; } }
     const a = document.createElement('a'); const u = URL.createObjectURL(blob);
     a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(u), 30000);
@@ -1586,7 +1591,7 @@ var Log=function(){var i=new Date,r=4;return{setLogLevel:function(t){r=t==this.d
         const et = s => { IA.etapa = s; V.emit('ia:estado', IA); if (onEtapa) onEtapa(s); };
         if (!window.tf) { et('Cargando TensorFlow.js local…'); await loadScript(IA.base + 'tf.min.js'); }
         if (!window.cocoSsd) { et('Cargando COCO-SSD…'); await loadScript(IA.base + 'coco-ssd.min.js'); }
-        if (!window.VIGIA_MODELO_COCO) { et('Cargando pesos del modelo (≈24 MB, local)…'); await loadScript(IA.base + 'modelo-coco-ssd.js'); }
+        if (!window.VIGIA_MODELO_COCO) { et('Cargando pesos del modelo (≈24 MB, local)…'); await loadScript(IA.base + 'modelo-coco-ssd-1.js'); await loadScript(IA.base + 'modelo-coco-ssd-2.js'); }
         et('Decodificando pesos…'); await V.sleep(20);
         const Mo = window.VIGIA_MODELO_COCO; const bin = atob(Mo.weightDataB64); const u = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
@@ -3550,7 +3555,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     });
   };
   A.download = async function (kind, id) {
-    try { const r = await A.api.mediaURL(A.token, kind, id, 'descargar'); const a = document.createElement('a'); a.href = r.url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); V.toast('Descarga registrada en auditoría: ' + r.name); }
+    try { const r = await A.api.mediaURL(A.token, kind, id, 'descargar'); await V.downloadBlob(r.blob, r.name); V.toast('Descarga registrada en auditoría: ' + r.name); }
     catch (e) { V.fail(e); }
   };
 

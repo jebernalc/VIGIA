@@ -77,7 +77,7 @@
     });
   };
   A.download = async function (kind, id) {
-    try { const r = await A.api.mediaURL(A.token, kind, id, 'descargar'); const a = document.createElement('a'); a.href = r.url; a.download = r.name; document.body.appendChild(a); a.click(); a.remove(); V.toast('Descarga registrada en auditoría: ' + r.name); }
+    try { const r = await A.api.mediaURL(A.token, kind, id, 'descargar'); await V.downloadBlob(r.blob, r.name); V.toast('Descarga registrada en auditoría: ' + r.name); }
     catch (e) { V.fail(e); }
   };
 

@@ -128,7 +128,12 @@
   V.toHex = toHex;
 
   // ---------- descargas ----------
-  V.downloadBlob = function (blob, name) {
+  // En el visor de claude.ai las descargas pasan por la capacidad «downloads» (el visor pide confirmación);
+  // fuera de él (archivo local o GitHub Pages) se usa un enlace de descarga normal.
+  let _dl = null; const dlCap = () => (_dl = _dl || (window.claude && window.claude.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null)));
+  V.downloadBlob = async function (blob, name) {
+    const d = await dlCap();
+    if (d) { try { await d.save({ filename: name, data: blob }); return true; } catch (e) { if (e && e.code === 'declined') return false; if (V.toast) V.toast('No se pudo guardar el archivo: ' + (e && (e.message || e.code)), 'warn'); return false; } }
     const a = document.createElement('a'); const u = URL.createObjectURL(blob);
     a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(u), 30000);

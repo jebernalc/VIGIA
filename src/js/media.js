@@ -118,7 +118,7 @@
         const et = s => { IA.etapa = s; V.emit('ia:estado', IA); if (onEtapa) onEtapa(s); };
         if (!window.tf) { et('Cargando TensorFlow.js local…'); await loadScript(IA.base + 'tf.min.js'); }
         if (!window.cocoSsd) { et('Cargando COCO-SSD…'); await loadScript(IA.base + 'coco-ssd.min.js'); }
-        if (!window.VIGIA_MODELO_COCO) { et('Cargando pesos del modelo (≈24 MB, local)…'); await loadScript(IA.base + 'modelo-coco-ssd.js'); }
+        if (!window.VIGIA_MODELO_COCO) { et('Cargando pesos del modelo (≈24 MB, local)…'); await loadScript(IA.base + 'modelo-coco-ssd-1.js'); await loadScript(IA.base + 'modelo-coco-ssd-2.js'); }
         et('Decodificando pesos…'); await V.sleep(20);
         const Mo = window.VIGIA_MODELO_COCO; const bin = atob(Mo.weightDataB64); const u = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
