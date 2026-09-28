@@ -12,7 +12,7 @@ const safe = s => s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!-
 let html = fs.readFileSync(R('src/index.html'), 'utf8');
 const css = fs.readFileSync(R('src/css/app.css'), 'utf8'); html = html.replace('<!--CSS-->', () => '<style>\n' + css + '\n</style>');
 const pkg = JSON.parse(fs.readFileSync(R('package.json'), 'utf8'));
-const banner = `/* VIGÍA edición local ${pkg.version} · construido ${new Date().toISOString()} · licencias de terceros: mp4box.js (BSD-3), jsPDF (MIT), supabase-js (MIT), TensorFlow.js y COCO-SSD (Apache-2.0) */`;
+const banner = `/* VIGÍA edición local ${pkg.version} · licencias de terceros: mp4box.js (BSD-3), jsPDF (MIT), supabase-js (MIT), TensorFlow.js y COCO-SSD (Apache-2.0) */`;
 // mp4box.js declara variables globales sueltas (p. ej. «V»): se encapsula para no pisar el espacio de nombres de la app
 const wrap = (f, code) => f.includes('mp4box') ? `(function(){var exports=undefined;\n${code}\n;window.MP4Box=MP4Box;})();` : code;
 html = html.replace('<!--JS-->', () => '<script>' + banner + '</script>\n' + JS.map(f => `<script>/* ${f} */\n${safe(wrap(f, fs.readFileSync(R(f), 'utf8')))}\n</script>`).join('\n'));
