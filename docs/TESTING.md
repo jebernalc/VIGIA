@@ -28,7 +28,7 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 | Intérprete de prompts (Node) | **35/35** correctas (incluye conteo, eventos, colores, horarios, sinopsis, apariencia, alarmas) | < 1 s |
 | Corte MP4 (Node + ffprobe) | **14/14** (H.264/AAC y VP9/Opus: duración, 2 pistas, decodificación sin errores, primer fotograma idéntico al original) | 2 s |
 | Suite interna en navegador | **23/23** correctas sin IA (incluye motor de analítica, central de alarmas, plano, apariencia, sinopsis, horarios, ZIP, paquete de evidencia); **24/24** con `--ia` | 8 s / ≈ 4 min |
-| **Casos de uso y funciones avanzadas con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **26/26**: los 14 casos de uso + sinopsis (2:49 → 1:33), imagen estroboscópica, búsqueda por apariencia, escalado a la central, clip con privacidad, reconocimiento/SOP/cierre con SLA 100 %, plano del sitio y paquete ZIP con **todos los SHA-256 verificados con Python** | ≈ 8 min |
+| **Casos de uso y funciones avanzadas con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **24/24**: los 14 casos de uso + sinopsis (2:49 → 1:33), imagen estroboscópica, búsqueda por apariencia, escalado a la central, clip con privacidad, reconocimiento/SOP/cierre con SLA 100 %, plano del sitio y paquete ZIP con **todos los SHA-256 verificados con Python** | ≈ 8 min |
 | Recorrido por interfaz (e2e) | **22/22** comprobaciones | ≈ 2 min |
 | Nube Supabase (cliente simulado + SQL real) | 10/10 sincronización (incluye alarmas y plano) · filas validadas contra el esquema real (migración 0004) · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
 | Cámara web simulada | primer cuadro 1,19 s · edad 0,6 s · búfer 12 s · clip de contexto 705 KB | 13 s |
