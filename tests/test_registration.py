@@ -49,6 +49,8 @@ def test_supabase_registration_master_and_isolation(monkeypatch,tmp_path):
             matches=[r for r in self.list(kind,org) if r['id']==oid]
             if not matches:raise HTTPException(404)
             return matches[0]
+        def delete(self,kind,oid,org):
+            cloud_rows[kind]=[r for r in cloud_rows[kind] if not(r['id']==oid and r['organizacion_id']==org)]
     monkeypatch.setattr(app,'Cloud',FakeCloud)
     c=TestClient(app.app)
     for email,org in [('a@example.com','Empresa A'),('b@example.com','Empresa B')]:
@@ -60,6 +62,13 @@ def test_supabase_registration_master_and_isolation(monkeypatch,tmp_path):
     camera=c.post('/api/v1/cameras',headers=headers_a,json={'name':'Entrada A'}).json()['id']
     assert len(c.get('/api/v1/cameras',headers=headers_a).json())==1
     assert c.get('/api/v1/cameras',headers=headers_b).json()==[]
+    round_response=c.post('/api/v1/rounds',headers=headers_a,json={'name':'Accesos','cameras':[camera],'interval':10})
+    assert round_response.status_code==200,round_response.text
+    rid=round_response.json()['id']
+    assert c.get('/api/v1/rounds',headers=headers_b).json()==[]
+    assert c.get('/api/v1/cameras/'+camera+'/view',headers=headers_b).status_code==404
+    assert c.delete('/api/v1/rounds/'+rid,headers=headers_b).status_code==404
+    assert c.delete('/api/v1/rounds/'+rid,headers=headers_a).status_code==200
     assert c.get('/api/v1/master',headers=headers_a).json()['organizacion']=='Empresa A'
     assert c.patch('/api/v1/master/organization',headers=headers_a,json={'nombre':'Nueva Empresa A'}).status_code==200
     assert c.get('/api/v1/master',headers=headers_a).json()['organizacion']=='Nueva Empresa A'

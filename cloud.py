@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-TABLES = {'camera':'vigia_camaras','recording':'vigia_grabaciones','frame':'vigia_fotogramas',
+TABLES = {'camera':'vigia_camaras','recording':'vigia_grabaciones','frame':'vigia_fotogramas','round':'vigia_rondas',
           'clip':'vigia_clips','cases':'vigia_expedientes','evidence':'vigia_evidencias','audit':'vigia_auditoria'}
 BUCKET='vigia-evidencias'
 
@@ -58,6 +58,9 @@ class Cloud:
 
     def update(self,kind,oid,org,data):
         self.request('PATCH','/rest/v1/'+TABLES[kind]+'?id=eq.'+urllib.parse.quote(oid)+'&organizacion_id=eq.'+urllib.parse.quote(org),data)
+
+    def delete(self,kind,oid,org):
+        self.request('DELETE','/rest/v1/'+TABLES[kind]+'?id=eq.'+urllib.parse.quote(oid)+'&organizacion_id=eq.'+urllib.parse.quote(org))
 
     def count(self,kind,org,filters=''):
         params='select=id&organizacion_id=eq.'+urllib.parse.quote(org)+'&limit=1'

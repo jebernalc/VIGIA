@@ -1,4 +1,4 @@
-# VIGÍA · versión 0.3
+# VIGÍA · versión 0.4
 
 Aplicación experimental de investigación de video histórico en español. Requiere Python 3.11+, FFmpeg y FFprobe. El servidor sirve el frontend y la API desde el mismo origen.
 
@@ -40,3 +40,11 @@ Mejoras prioritarias: sesiones persistentes y revocables; cuotas por cliente; va
 El repositorio incluye `Dockerfile` y `render.yaml` para crear un servicio web en Render mediante su opción de Blueprint. El servicio instala FFmpeg y publica la API y la interfaz en un mismo origen. El Blueprint configura la URL y la clave **publicable** de Supabase. Nunca coloques la clave secreta o `service_role` en GitHub. El dominio final debe añadirse a los destinos permitidos de confirmación de correo en Supabase Auth si se quiere que el enlace de confirmación regrese directamente a VIGÍA.
 
 La modalidad gratuita puede suspenderse cuando no se usa. En modo Supabase, los metadatos y los objetos quedan almacenados de forma persistente en Supabase, pero la caché local y los trabajos en curso se pierden al reiniciar el contenedor. La extracción no tiene una cola durable; un despliegue o un vencimiento de sesión puede dejar una grabación pendiente o fallida. No hay detector de objetos, transmisión en vivo ni cuotas institucionales. Prueba primero con video sintético y configura el dominio final en los destinos permitidos de Supabase Auth.
+
+## Primera ronda y cambios visuales
+
+La pestaña **Rondas** permite guardar un recorrido de 1 a 32 cámaras, elegir intervalos entre 5 y 120 segundos y pasar manual o automáticamente entre vistas. En modo Supabase, el plan se guarda en `vigia_rondas` con RLS y solo el maestro puede crearlo o eliminarlo; miembros autenticados de la misma organización pueden consultarlo. En modo local se guarda en SQLite.
+
+Sin una fuente de video en vivo, cada cámara presenta el fotograma más reciente de su último MP4 procesado con la etiqueta **ARCHIVO HISTÓRICO**. Para capturas actuales, el administrador del servidor puede definir `VIGIA_LIVE_SOURCES` como JSON que asocia UUID de cámara a URL RTSP, por ejemplo `{"uuid-de-camara":"rtsp://usuario:clave@host/ruta"}`. **No incluyas estas credenciales en el repositorio ni en el navegador.** El servidor obtiene un JPEG bajo demanda con FFmpeg, limita a dos capturas simultáneas y marca la vista **CAPTURA ACTUAL**. El cambio de cámara es periódico; cada captura depende de latencia y disponibilidad de la fuente RTSP. No es un flujo continuo ni un detector de incidentes.
+
+En **Chat**, «¿Dónde hubo movimiento en los últimos 30 segundos?» compara fotogramas históricos en escala de grises, ordena hasta ocho intervalos por cambio visual y muestra imágenes y tiempos. Cambios de luz o encuadre pueden producir puntuaciones altas. No hay reconocimiento de personas, vehículos, objetos ni comprensión semántica; para ello se requiere un modelo visual evaluado con datos adecuados. La consulta de eventos en tiempo real, alertas y soporte de miles de cámaras son objetivos de fases siguientes.

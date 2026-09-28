@@ -1,4 +1,4 @@
-# Capacidades de VIGÍA · versión 0.3
+# Capacidades de VIGÍA · versión 0.4
 
 | Función | Estado | Evidencia / límite |
 |---|---|---|
@@ -15,3 +15,6 @@
 La calidad visual y la eficiencia frente a productos comerciales requieren pruebas de usabilidad, carga y precisión comparables. Esta versión no hace tal afirmación.
 
 La modalidad nube limita cada MP4 a 50 MB y cinco minutos. Su procesamiento ocurre en memoria en el servicio web, por lo que requiere una cola durable para continuidad operativa.
+
+| Rondas de cámaras | Implementada y probada por API | Recorrido automático y manual; planes persistentes por organización. Vista histórica por defecto, captura RTSP bajo demanda solo si la fuente está configurada en el servidor. |
+| Búsqueda de cambio visual | Implementada y probada con MP4 sintético | Compara fotogramas muestreados; no identifica objetos ni incidentes. |

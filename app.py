@@ -15,7 +15,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from cloud import Cloud
 
 ROOT = Path(__file__).resolve().parent
@@ -31,6 +31,11 @@ SUPABASE_KEY = os.getenv('VIGIA_SUPABASE_PUBLISHABLE_KEY','')
 if bool(SUPABASE_URL) != bool(SUPABASE_KEY):
     raise RuntimeError('Configura juntas VIGIA_SUPABASE_URL y VIGIA_SUPABASE_PUBLISHABLE_KEY')
 SUPABASE_MODE = bool(SUPABASE_URL and SUPABASE_KEY)
+try:
+    LIVE_SOURCES=json.loads(os.getenv('VIGIA_LIVE_SOURCES','{}'))
+    if not isinstance(LIVE_SOURCES,dict):raise ValueError()
+except ValueError:raise RuntimeError('VIGIA_LIVE_SOURCES debe ser un objeto JSON')
+LIVE_LOCK=threading.BoundedSemaphore(2)
 
 def supabase_request(method,path,token=None,payload=None):
     headers={'apikey':SUPABASE_KEY,'Content-Type':'application/json'}
@@ -92,6 +97,7 @@ def init():
         CREATE TABLE IF NOT EXISTS cases(id TEXT PRIMARY KEY,org TEXT,title TEXT,note TEXT,status TEXT,created REAL);
         CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY,org TEXT,case_id TEXT,recording TEXT,frame TEXT,clip TEXT);
         CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,org TEXT,actor TEXT,action TEXT,object TEXT,created REAL);
+        CREATE TABLE IF NOT EXISTS rounds(id TEXT PRIMARY KEY,org TEXT,name TEXT,cameras TEXT,interval INTEGER,created REAL);
         CREATE INDEX IF NOT EXISTS ix_frame_window ON frame(org,recording,second);
         ''')
         for oid,name in [('demo-a','Institución Andina'),('demo-b','Institución Norte')]:
@@ -247,6 +253,98 @@ async def camera(req:Request):
         c.execute('INSERT INTO camera VALUES (?,?,?,?,?,?)',(oid,u['org'],name,str(v.get('timezone','America/Bogota'))[:60],str(v.get('location',''))[:150],'archivo'))
         audit(c,u,'camera.create',oid)
     return {'id':oid,'name':name}
+
+@app.get('/api/v1/rounds')
+def rounds(req:Request):
+    u=auth(req)
+    if SUPABASE_MODE:
+        return [{'id':r['id'],'name':r['nombre'],'cameras':r['camaras'],
+                 'interval':r['intervalo_segundos']} for r in cloud(req).list('round',u['org'],order='creado_en.desc')]
+    with db() as c:
+        return [{'id':r['id'],'name':r['name'],'cameras':json.loads(r['cameras']),'interval':r['interval']}
+                for r in c.execute('SELECT * FROM rounds WHERE org=? ORDER BY created DESC',(u['org'],))]
+
+@app.post('/api/v1/rounds')
+async def create_round(req:Request):
+    u=auth(req);require_role(u,*(['maestro'] if SUPABASE_MODE else ['maestro','administrator']))
+    v=await req.json();name=str(v.get('name','')).strip();ids=v.get('cameras',[])
+    try:interval=int(v.get('interval',10))
+    except (TypeError,ValueError):raise HTTPException(422,'Intervalo inválido')
+    if not (3<=len(name)<=100 and isinstance(ids,list) and 1<=len(ids)<=32 and
+            len(ids)==len(set(str(i) for i in ids)) and all(isinstance(i,str) for i in ids) and
+            5<=interval<=120):raise HTTPException(422,'Indica nombre, de 1 a 32 cámaras únicas e intervalo de 5 a 120 segundos')
+    client=cloud(req) if SUPABASE_MODE else None
+    if client:
+        for cid in ids:client.get('camera',cid,u['org'])
+    else:
+        with db() as c:
+            for cid in ids:row(c,'camera',cid,u['org'])
+    oid=str(uuid.uuid4())
+    if client:
+        client.insert('round',{'id':oid,'organizacion_id':u['org'],'nombre':name,'camaras':ids,'intervalo_segundos':interval})
+        cloud_audit(client,u,'round.create',oid)
+    else:
+        with db() as c:
+            c.execute('INSERT INTO rounds VALUES (?,?,?,?,?,?)',(oid,u['org'],name,json.dumps(ids),interval,time.time()))
+            audit(c,u,'round.create',oid)
+    return {'id':oid,'name':name,'cameras':ids,'interval':interval}
+
+@app.delete('/api/v1/rounds/{oid}')
+def delete_round(req:Request,oid:str):
+    u=auth(req);require_role(u,*(['maestro'] if SUPABASE_MODE else ['maestro','administrator']))
+    if SUPABASE_MODE:
+        client=cloud(req);client.get('round',oid,u['org']);client.delete('round',oid,u['org'])
+        cloud_audit(client,u,'round.delete',oid)
+    else:
+        with db() as c:
+            row(c,'rounds',oid,u['org']);c.execute('DELETE FROM rounds WHERE id=? AND org=?',(oid,u['org']))
+            audit(c,u,'round.delete',oid)
+    return {'message':'Ronda eliminada'}
+
+@app.get('/api/v1/cameras/{cid}/view')
+def camera_view(req:Request,cid:str):
+    u=auth(req)
+    if SUPABASE_MODE:cloud(req).get('camera',cid,u['org'])
+    else:
+        with db() as c:row(c,'camera',cid,u['org'])
+    if cid in LIVE_SOURCES:
+        return {'mode':'live','url':f'/api/v1/cameras/{cid}/snapshot','label':'Captura actual de fuente configurada'}
+    if SUPABASE_MODE:
+        client=cloud(req)
+        from urllib.parse import quote
+        recs=client.list('recording',u['org'],filters='camara_id=eq.'+quote(cid)+'&estado=eq.ready',limit=1,order='cargado_en.desc')
+        frames=client.list('frame',u['org'],filters='grabacion_id=eq.'+quote(recs[0]['id']),limit=1,order='segundo.desc') if recs else []
+        if frames:return {'mode':'historical','url':'/api/v1/media/frame/'+frames[0]['id'],
+                          'label':'Archivo histórico · segundo '+str(frames[0]['segundo'])}
+    else:
+        with db() as c:
+            frame=c.execute('''SELECT frame.id,frame.second FROM frame JOIN recording ON recording.id=frame.recording
+                AND recording.org=frame.org WHERE frame.org=? AND recording.camera=? AND recording.status='ready'
+                ORDER BY recording.uploaded DESC,frame.second DESC LIMIT 1''',(u['org'],cid)).fetchone()
+            if frame:return {'mode':'historical','url':'/api/v1/media/frame/'+frame['id'],
+                             'label':'Archivo histórico · segundo '+str(frame['second'])}
+    return {'mode':'empty','url':None,'label':'Sin fuente en vivo ni video histórico'}
+
+@app.get('/api/v1/cameras/{cid}/snapshot')
+def camera_snapshot(req:Request,cid:str):
+    u=auth(req)
+    if SUPABASE_MODE:cloud(req).get('camera',cid,u['org'])
+    else:
+        with db() as c:row(c,'camera',cid,u['org'])
+    source=LIVE_SOURCES.get(cid)
+    if not isinstance(source,str) or not source.startswith(('rtsp://','rtsps://')):
+        raise HTTPException(404,'No hay una fuente RTSP configurada para esta cámara')
+    if not LIVE_LOCK.acquire(blocking=False):raise HTTPException(429,'Hay demasiadas capturas en curso')
+    try:
+        result=subprocess.run(['ffmpeg','-nostdin','-rtsp_transport','tcp','-i',source,
+            '-frames:v','1','-f','image2','-vcodec','mjpeg','pipe:1'],capture_output=True,timeout=12)
+        if result.returncode or not result.stdout.startswith(b'\xff\xd8'):
+            raise HTTPException(503,'La cámara no respondió; verifica la conexión RTSP')
+        return Response(result.stdout,media_type='image/jpeg',headers={'Cache-Control':'private, no-store',
+            'X-Content-Type-Options':'nosniff'})
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504,'La cámara tardó demasiado en responder')
+    finally:LIVE_LOCK.release()
 
 def process(rec_id,path,org,token=None):
     try:
@@ -407,6 +505,30 @@ async def chat(req:Request):
     start=max(0,start);end=min(rec['duration'],end)
     if end<start: raise HTTPException(422,'Ventana fuera de la grabación')
     if 'indicador' in message: return {'intent':'metrics','answer':'Consulta los indicadores del panel.','items':[]}
+    if re.search(r'movimiento|cambio visual|actividad visual',message):
+        from PIL import Image,ImageChops,ImageStat
+        if SUPABASE_MODE:
+            from urllib.parse import quote
+            client=cloud(req)
+            sampled=client.list('frame',u['org'],filters=f'grabacion_id=eq.{quote(rid)}&segundo=gte.{start}&segundo=lte.{end}',limit=50,order='segundo.asc')
+            frames_for_analysis=[(f['id'],f['segundo'],f['sha256'],
+                cached_media(client,f['objeto'],f['sha256'],u['org'],f['id'],'jpg')) for f in sampled]
+        else:
+            with db() as c:
+                frames_for_analysis=[(f['id'],f['second'],f['sha256'],Path(f['path'])) for f in c.execute(
+                    'SELECT * FROM frame WHERE org=? AND recording=? AND second BETWEEN ? AND ? ORDER BY second ASC LIMIT 50',
+                    (u['org'],rid,start,end))]
+        ranked=[];previous=None
+        for fid,second,sha,path in frames_for_analysis:
+            with Image.open(path) as image:small=image.convert('L').resize((96,54))
+            if previous is not None:
+                score=round(ImageStat.Stat(ImageChops.difference(previous,small)).mean[0],1)
+                ranked.append({'id':fid,'second':second,'sha256':sha,'url':f'/api/v1/media/frame/{fid}','score':score})
+            previous=small
+        ranked=sorted(ranked,key=lambda f:f['score'],reverse=True)[:8]
+        return {'intent':'motion','window':[start,end],'items':ranked,
+            'answer':f'{len(ranked)} intervalos ordenados por cambio visual entre fotogramas. Un cambio puede deberse a iluminación o movimiento de cámara y no acredita un incidente.',
+            'coverage':'Comparación de imágenes en escala de grises muestreadas ~cada 5 s. No detecta ni identifica objetos o personas.'}
     wants_objects=bool(re.search(r'persona|vehículo|vehiculo|detect|encuentra',message))
     if wants_objects: return {'intent':'objects','window':[start,end],'answer':'No hay detector de personas o vehículos instalado. No se han generado hallazgos. Puedes inspeccionar fotogramas del intervalo.','items':[],'coverage':'Fotogramas muestreados cada 5 segundos; no hay análisis de objetos.'}
     if SUPABASE_MODE:

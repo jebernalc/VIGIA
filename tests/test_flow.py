@@ -18,6 +18,12 @@ def test_real_video_and_tenant_isolation():
             return {'Authorization':'Bearer '+r.json()['token']}
         a=login('operador-a','test-only-secret-a');b=login('operador-b','test-only-secret-b')
         cam=client.post('/api/v1/cameras',headers=a,json={'name':'Cámara 1','timezone':'America/Bogota'}).json()['id']
+        created=client.post('/api/v1/rounds',headers=a,json={'name':'Ronda accesos','cameras':[cam],'interval':5})
+        assert created.status_code==200,created.text
+        round_id=created.json()['id']
+        assert client.get('/api/v1/rounds',headers=b).json()==[]
+        assert client.get(f'/api/v1/cameras/{cam}/view',headers=b).status_code==404
+        assert client.post('/api/v1/rounds',headers=b,json={'name':'Ronda ajena','cameras':[cam],'interval':5}).status_code==404
         video=Path(tmp)/'synthetic.mp4'
         subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc=size=320x180:rate=10','-t','4','-pix_fmt','yuv420p','-y',str(video)],check=True)
         with video.open('rb') as f:
@@ -30,6 +36,9 @@ def test_real_video_and_tenant_isolation():
             time.sleep(.1)
         assert rec['status']=='ready',rec
         assert rec['sha256']==app.digest(video)
+        view=client.get(f'/api/v1/cameras/{cam}/view',headers=a).json()
+        assert view['mode']=='historical' and view['url'].startswith('/api/v1/media/frame/')
+        assert client.get(f'/api/v1/cameras/{cam}/snapshot',headers=a).status_code==404
         assert client.get(f'/api/v1/recordings/{rid}',headers=b).status_code==404
         assert client.get('/api/v1/cameras',headers=b).json()==[]
         found=client.post('/api/v1/chat',headers=a,json={'recording_id':rid,'message':'muéstrame fotogramas en los últimos 5 minutos'}).json()
@@ -39,6 +48,8 @@ def test_real_video_and_tenant_isolation():
         assert client.get(frame['url'],headers=b).status_code==404
         obj=client.post('/api/v1/chat',headers=a,json={'recording_id':rid,'message':'encuentra personas entre 00:00:01 y 00:00:03'}).json()
         assert obj['items']==[] and 'No hay detector' in obj['answer']
+        motion=client.post('/api/v1/chat',headers=a,json={'recording_id':rid,'message':'¿Dónde hubo movimiento en los últimos 30 segundos?'}).json()
+        assert motion['intent']=='motion' and motion['items'] and all(item['score']>=0 for item in motion['items'])
         clip=client.post('/api/v1/clips',headers=a,json={'recording_id':rid,'start':0,'end':2}).json()
         assert client.get(clip['url'],headers=b).status_code==404
         assert app.digest(Path(tmp)/'demo-a'/'clips'/f'{clip["id"]}.mp4')==clip['sha256']
@@ -46,6 +57,8 @@ def test_real_video_and_tenant_isolation():
         assert client.get(f'/api/v1/cases/{case["id"]}/report',headers=b).status_code==404
         assert rec['sha256'] in client.get(f'/api/v1/cases/{case["id"]}/report',headers=a).text
         assert client.get('/api/v1/cases',headers=b).json()==[]
+        assert client.delete(f'/api/v1/rounds/{round_id}',headers=b).status_code==404
+        assert client.delete(f'/api/v1/rounds/{round_id}',headers=a).status_code==200
         assert 'Acceso institucional' in client.get('/').text
         assert client.post('/api/v1/logout',headers=a).status_code==200
         assert client.get('/api/v1/cameras',headers=a).status_code==401
