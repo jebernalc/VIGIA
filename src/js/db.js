@@ -36,7 +36,9 @@
       mk('blobs', ['org'], 'key');
     }
   };
-  const VERSION = 1;
+  // v2: resultados de analítica por grabación (conteos, ocupación, puertas, mapa de calor, pistas)
+  MIGRATIONS[2] = db => { const s = db.createObjectStore('analysis', { keyPath: 'id' }); s.createIndex('org', 'org', { unique: false }); s.createIndex('recordingId', 'recordingId', { unique: false }); s.createIndex('cameraId', 'cameraId', { unique: false }); };
+  const VERSION = 2;
 
   class DB {
     constructor(name) { this.name = name; this.db = null; this.mem = null; }

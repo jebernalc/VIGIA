@@ -47,6 +47,10 @@ python -m http.server 8080      # luego abra http://localhost:8080/VIGIA.html
 
 Las contraseñas se pueden fijar para demostraciones copiando `vigia.config.example.js` como `vigia.config.js` (equivalente a `.env.example`). No use contraseñas de producción.
 
+## Casos de uso de analítica
+
+Menú **Analítica y casos de uso** → «Cargar demostración de casos de uso». La demostración incluye 12 casos activos: conteo de entradas y salidas, ingreso en grupo, intrusión, merodeo, aglomeración, vehículo mal estacionado, puerta abierta, objeto abandonado, manipulación de cámara, color de prenda, mapa de calor y humo (experimental). Todos se verificaron con IA real sobre un video con guion conocido. Detalle en `docs/CASOS_DE_USO.md`; guion para la alta dirección en `docs/ESTADO_PRESENTACION.md`.
+
 ## Recorrido en 3 minutos
 
 1. **Centro de operaciones → Cargar video de demostración.** Crea la cámara «Parqueadero norte (demo)» y abre la importación con el video sintético de 3 min 20 s (marque «Analizar con motor IA» para detectar personas). Verá el SHA-256 y el progreso real de la indexación.

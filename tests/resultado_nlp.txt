@@ -19,4 +19,13 @@ OK  generar informe
 OK  añadir al caso
 OK  número en palabras (treinta segundos)
 OK  cam 2 media hora
+OK  conteo de ingresos al salón hoy (cámara por nombre)
+OK  vehículos mal parqueados
+OK  persona con camisa roja y pantalón negro
+OK  puerta abierta
+OK  humo en todas las cámaras
+OK  manipulación de cámara
+OK  objeto abandonado
+OK  regla de puerta abierta
+OK  conteo de salidas de vehículos
 exit 0

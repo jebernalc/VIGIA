@@ -3,7 +3,7 @@
   --bg:#0c0f13;--bg2:#11151b;--panel:#161b22;--panel2:#1c222b;--line:#262e39;--line2:#323c49;
   --tx:#e8edf2;--tx2:#a9b4c0;--tx3:#74808d;--acc:#19c2ad;--acc2:#0f8f80;--accbg:rgba(25,194,173,.12);
   --warn:#e8a317;--warnbg:rgba(232,163,23,.12);--bad:#ef5b5b;--badbg:rgba(239,91,91,.12);--ok:#38b26b;--okbg:rgba(56,178,107,.12);--info:#5b9df0;
-  --c-persona:#3987e5;--c-vehiculo:#d95926;--c-movimiento:#199e70;--c-animal:#c98500;--c-objeto:#d55181;--c-otro:#9085e9;
+  --c-persona:#3987e5;--c-vehiculo:#d95926;--c-movimiento:#199e70;--c-animal:#c98500;--c-objeto:#d55181;--c-otro:#9085e9;--c-evento:#b98cf0;
   --r:10px;--r2:6px;--sh:0 8px 28px rgba(0,0,0,.35);--mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
   color-scheme:dark;
 }

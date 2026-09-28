@@ -19,7 +19,8 @@
 
   const CLS = g => (V.GRUPOS_CLASE[g] || [g]);
   const clasesCoco = grupos => grupos.flatMap(CLS);
-  const grpTxt = gs => gs.map(g => ({ persona: 'personas', vehiculo: 'vehículos', movimiento: 'movimiento', animal: 'animales', objeto: 'objetos' }[g] || g)).join(' o ');
+  const grpTxt = gs => gs.map(g => ({ persona: 'personas', vehiculo: 'vehículos', movimiento: 'movimiento', animal: 'animales', objeto: 'objetos' }[g] || ('«' + (V.CLASES_ES[g] || g) + '»'))).join(' o ');
+  const atrTxt = a => !a ? '' : ' con ' + [a.superior ? 'prenda superior ' + a.superior : '', a.inferior ? 'prenda inferior ' + a.inferior : '', a.cualquiera ? 'ropa de color ' + a.cualquiera : ''].filter(Boolean).join(' y ');
 
   /** Resuelve una ventana del plan a una ventana ejecutable para una cámara y su grabación de referencia. */
   C.resolverVentana = function (w, cam, recs) {
@@ -112,6 +113,7 @@
           if (dets.length) partes.push('IA: ' + dets.map(x => V.claseEs(x.clase) + ' ' + Math.round(x.score * 100) + '%').join(', '));
           else if (V.ia.estado === 'listo') partes.push('IA: sin objetos sobre el umbral (50%)');
           else partes.push('motor IA no cargado: no se clasifican objetos');
+          if (n.analitica) { if (n.analitica.puertas.length) partes.push(n.analitica.puertas.map(p => p.puerta + ': ' + (p.abierta ? 'ABIERTA' + (p.desdeS ? ' hace ' + Math.round(p.desdeS) + ' s' : '') : 'cerrada')).join(', ')); if (n.analitica.ocupacion.length) partes.push(n.analitica.ocupacion.map(o => o.zona + ': ' + o.n + ' persona(s)').join(', ')); if (n.analitica.manipulacion) partes.push('⚠ posible manipulación: ' + n.analitica.manipulacion); }
           say('Cámara ' + cam.numero + ' · ' + (n.tipo === 'emulacion' ? 'EMULACIÓN en vivo desde archivo (contenido grabado, pos. ' + V.fmtDur(f.pos) + ')' : 'en vivo') + ' · cuadro de ' + V.fmtTime(f.ts, cam.tz) + ' (edad ' + n.edadS.toFixed(1) + ' s) · ' + partes.join('; ') + '.');
           card({ tipo: 'vivo', cameraId: cid, derivadoId: d.id, edadS: n.edadS, estadoConexion: n.estado, fuente: n.tipo, dets, mov: f.mov ? { movimiento: f.mov.movimiento, score: f.mov.score, cajas: f.mov.cajas } : null, segmentos: n.segmentos });
           estado.ultimoDerivadoId = d.id;
@@ -163,22 +165,23 @@
         const partes = []; const hallazgosIds = []; const cobertura = []; let movimientoAlt = [];
         for (const cid of camaras) {
           const cam = camById(cid); const w = C.resolverVentana(ventana, cam, recsPorCam[cid]);
-          const r = await api.searchEvents(token, { cameraIds: [cid], ventana: w, clases: cc, limit: 50 });
+          const r = await api.searchEvents(token, { cameraIds: [cid], ventana: w, clases: cc, limit: 50, atributos: plan.atributos || null });
           r.cobertura.forEach(cv => cobertura.push(Object.assign({ camara: cam.numero, tz: cam.tz, interpretacion: w.interpretacion }, cv)));
           r.items.forEach(f => hallazgosIds.push(f.id));
           const sinSoporte = r.cobertura.filter(cv => cv.indexado && !cv.soportaClase);
-          if (sinSoporte.length && !clases.every(c => c === 'movimiento')) {
+          if (sinSoporte.length && clases.some(c => ['persona', 'vehiculo', 'animal', 'objeto'].includes(c))) {
             const rm = await api.searchEvents(token, { cameraIds: [cid], ventana: w, clases: ['movimiento'], limit: 50 });
             movimientoAlt = movimientoAlt.concat(rm.items.map(f => f.id));
           }
           if (!r.cobertura.length) partes.push('Cámara ' + cam.numero + ': ninguna grabación cubre ' + (w.interpretacion || 'la ventana') + '.');
           else {
             const cv = r.cobertura[0]; const rec = recsPorCam[cid].find(x => x.id === cv.recordingId);
-            partes.push('Cámara ' + cam.numero + ' · ' + ventanaTexto(cv, rec, cam.tz) + ': ' + (cv.indexado ? (cv.soportaClase ? r.total + ' hallazgo(s) de ' + grpTxt(clases) : 'la grabación sólo se analizó con detección de movimiento, que NO distingue ' + grpTxt(clases.filter(c => c !== 'movimiento')) + '') : 'índice pendiente') + (cv.recortada ? ' ⚠ cobertura parcial' : '') + '.');
+            partes.push('Cámara ' + cam.numero + ' · ' + ventanaTexto(cv, rec, cam.tz) + ': ' + (cv.indexado ? (cv.soportaClase ? r.total + ' resultado(s) de ' + grpTxt(clases) + atrTxt(plan.atributos) : 'no se puede responder: ' + (cv.motivos && cv.motivos.length ? cv.motivos.join('; ') : 'la grabación sólo se analizó con detección de movimiento, que NO distingue ' + grpTxt(clases.filter(c => c !== 'movimiento')))) : 'índice pendiente') + (cv.recortada ? ' ⚠ cobertura parcial' : '') + '.');
           }
         }
         const n = hallazgosIds.length;
-        say((n ? 'Encontré ' + n + ' hallazgo(s) sugerido(s) por el motor de visión.' : (cobertura.some(c => c.indexado && c.soportaClase) ? 'Sin evidencia: el análisis no detectó ' + grpTxt(clases) + ' en la ventana consultada.' : 'No puedo afirmar ni descartar ' + grpTxt(clases) + ': falta análisis compatible o cobertura.')) + ' ' + partes.join(' '));
+        const esEv = clases.some(c => V.analitica && V.analitica.esEvento(c));
+        say((n ? 'Encontré ' + n + (esEv ? ' evento(s) de analítica' : ' hallazgo(s) sugerido(s) por el motor de visión') + (plan.atributos ? atrTxt(plan.atributos) + ' (color aproximado: la iluminación y la cámara lo afectan)' : '') + '.' + (clases.includes('humo') ? ' ⚠ La detección de humo es EXPERIMENTAL: verifique visualmente y con detectores certificados.' : '') : (cobertura.some(c => c.indexado && c.soportaClase) ? 'Sin evidencia: el análisis no detectó ' + grpTxt(clases) + ' en la ventana consultada.' : 'No puedo afirmar ni descartar ' + grpTxt(clases) + ': falta análisis compatible o cobertura.')) + ' ' + partes.join(' '));
         if (movimientoAlt.length) say('Como alternativa limitada muestro ' + movimientoAlt.length + ' intervalo(s) con MOVIMIENTO sin clasificar (no implica persona ni vehículo). Puede reanalizar con el motor IA local.');
         card({ tipo: 'hallazgos', ids: hallazgosIds, clases, cobertura, movimientoAlt, ventanaTexto: (ventana && (ventana.texto || '')) });
         if (hallazgosIds.length) estado.ultimoHallazgoId = hallazgosIds[0];
@@ -242,6 +245,30 @@
           card({ tipo: 'informe', caseId: caso.id, reportId: r.id });
         } else card({ tipo: 'caso', caseId: caso.id });
         estado.ultimoCasoId = caso.id; break;
+      }
+      case 'conteo': {
+        const clase = (plan.conteo && plan.conteo.clase) || 'persona';
+        const lineas = [], ocup = [], cob = []; let E = 0, S = 0;
+        for (const cid of plan.camaras) {
+          const cam = camById(cid);
+          if (plan.ventana && plan.ventana.modo === 'ahora') {
+            const a = V.live.get(cid);
+            if (a && a.motor) { const oc = a.motor.ocupacionActual(); const cr = a.motor.crucesDesde(a.conectadaEn); cr.forEach(l => { E += l.entradas; S += l.salidas; lineas.push(Object.assign({ camara: cam.codigo, cameraId: cid, tz: cam.tz, vivo: true }, l)); }); oc.forEach(o => ocup.push(Object.assign({ camara: cam.codigo }, o))); continue; }
+          }
+          const w = C.resolverVentana(plan.ventana && plan.ventana.modo === 'ahora' ? { modo: 'todo' } : plan.ventana, cam, recsPorCam[cid]);
+          const r = await api.analyticsSummary(token, { cameraIds: [cid], ventana: w, clase });
+          r.lineas.forEach(l => lineas.push(l)); r.ocupacion.forEach(o => ocup.push(o)); r.cobertura.forEach(c => cob.push(Object.assign({ interpretacion: w && w.interpretacion }, c)));
+          E += r.entradas; S += r.salidas;
+        }
+        const sujeto = clase === 'vehiculo' ? 'vehículos' : 'personas';
+        const sinSop = cob.filter(c => !c.soportaConteo || !c.analizado);
+        if (!lineas.length) {
+          say('No puedo contar ' + sujeto + ' con la evidencia disponible: ' + (sinSop.length ? sinSop.map(c => c.camara + ': ' + (c.motivo || 'sin análisis')).join('; ') : 'no hay grabaciones ni transmisiones analizadas en esa ventana') + '. El conteo requiere una línea de acceso configurada y el detector IA.');
+        } else {
+          say('Conteo de ' + sujeto + ': ' + E + ' ingreso(s) y ' + S + ' salida(s) (neto ' + (E - S >= 0 ? '+' : '') + (E - S) + '). ' + lineas.map(l => l.camara + ' · ' + l.linea + ': ' + l.entradas + ' entradas / ' + l.salidas + ' salidas' + (l.vivo ? ' (transmisión en vivo desde la conexión)' : '')).join('; ') + '.' + (ocup.length ? ' Ocupación máxima observada: ' + ocup.map(o => o.zona + ' ' + o.max).join(', ') + '.' : '') + ' Método: detector IA + seguimiento + línea virtual; precisión no validada en campo.' + (sinSop.length ? ' Sin cobertura: ' + sinSop.map(c => c.camara + ' (' + (c.motivo || 'sin análisis') + ')').join('; ') + '.' : ''));
+        }
+        card({ tipo: 'conteo', lineas: lineas.map(l => Object.assign({}, l, { cruces: (l.cruces || []).slice(0, 60) })), ocupacion: ocup, entradas: E, salidas: S, clase, cobertura: cob });
+        estado.ultimasCamaras = plan.camaras; break;
       }
       case 'indicadores': {
         const m = await api.metrics(token);

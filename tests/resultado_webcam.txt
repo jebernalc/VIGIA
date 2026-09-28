@@ -3,6 +3,7 @@
  "estado": "conectada",
  "edadS": "0.60",
  "buffer": 12,
- "clip": "vivo_CAM-01_2026-09-27T02-53-34-758Z.webm 705564B",
- "respuesta": "Cámara 1 · en vivo · cuadro de 21:53:46 UTC-5 (edad 0.6 s) · movimiento detectado; motor IA no cargado: no se clasifican objetos."
+ "clip": "vivo_CAM-01_2026-09-28T06-35-24-599Z.webm 705564B",
+ "respuesta": "Cámara 1 · en vivo · cuadro de 01:35:36 UTC-5 (edad 0.6 s) · movimiento detectado; motor IA no cargado: no se clasifican objetos."
 }
+exit 0

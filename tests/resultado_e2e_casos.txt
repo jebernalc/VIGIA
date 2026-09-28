@@ -1,0 +1,17 @@
+OK  motor IA cargado y marcado para el análisis
+   KPIs: Ingresos 4 Acceso al salón | Salidas 1 neto +3 | Ocupación máxima 2 Salón (interior) | Personas distintas (pistas) 5 seguimiento en esta cámara | Eventos de analítica 14 10 tipos | Revisados 0 de 14
+OK  tablero: 4 ingresos y 1 salida (guion: 4 y 1)
+    Conteo de personas: 4 ingreso(s) y 1 salida(s) (neto +3). CAM-01 · Acceso al salón: 4 entradas / 1 salidas. Ocupación máxima observada: Salón (interior) 2. Méto
+OK  conteo de ingresos al salón desde el chat
+OK  vehículo mal estacionado
+OK  búsqueda por color de prenda
+OK  puerta abierta
+OK  humo (experimental, advertido)
+OK  objeto abandonado (sin falsos positivos)
+OK  manipulación de cámara
+OK  merodeo + intrusión
+OK  ingreso en grupo (tailgating)
+OK  aglomeración (umbral 2)
+OK  editor muestra 3 zonas, 1 línea y 1 puerta
+
+Casos de uso verificados por la interfaz.

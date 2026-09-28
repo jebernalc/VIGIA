@@ -12,7 +12,11 @@
   const BUF_S = 300, SEG_S = 10, SEG_N = 6;
 
   class Adapter {
-    constructor(cam, token) { this.cam = cam; this.org = cam.org; this.token = token; this.estado = 'conectando'; this.ring = []; this.segs = []; this.analisis = true; this.md = new V.media.MotionDetector(cam.mascaras); this.listeners = new Set(); }
+    constructor(cam, token) {
+      this.cam = cam; this.org = cam.org; this.token = token; this.estado = 'conectando'; this.ring = []; this.segs = []; this.analisis = true; this.md = new V.media.MotionDetector(cam.mascaras); this.listeners = new Set();
+      this.alertasAna = [];
+      this.motor = V.analitica ? new V.analitica.Motor(cam, { onAlerta: a => this.alertasAna.push(a) }) : null;
+    }
     get cameraId() { return this.cam.id; }
     async _startCapture() {
       this.canvas = document.createElement('canvas');
@@ -31,6 +35,7 @@
       if (this.analisis) {
         const m = this.md.step(c); f.mov = m;
         if (V.ia.estado === 'listo' && !this._busy) { this._busy = true; try { f.dets = (await V.ia.detectar(c)) || []; f.motor = V.ia.motorId; } finally { this._busy = false; } }
+        if (this.motor) { this.motor.frame({ t: (f.ts - this.conectadaEn) / 1000, frameId: 'vivo_' + f.ts, canvas: c, dets: V.ia.estado === 'listo' ? f.dets : null }); f.ana = this.motor.estadoActual(); }
         await this._rules(f);
       }
       this.last = f; this.ring.push(f); while (this.ring.length > BUF_S) this.ring.shift();
@@ -51,7 +56,15 @@
     }
     async _rules(f) {
       const rules = (await V.app.api.db.by('rules', 'cameraId', this.cam.id)).filter(r => r.org === this.org && r.estado === 'activa' && Date.now() < r.hasta);
+      const ana = this.alertasAna.splice(0);
       for (const r of rules) {
+        if (V.analitica && V.analitica.esEvento(r.clase)) {
+          const a = ana.find(x => x.tipo === r.clase); if (!a) continue;
+          if (r.ultimoDisparo && Date.now() - r.ultimoDisparo < 30000) continue;
+          const id = V.id('alimg'); const h = V.app.api._workerHandle(); const blobKey = await h.putBlob(this.org, 'alertas', id, f.blob);
+          await V.app.api._fireAlert(this.org, r, { blobKey, capturaTs: f.ts, detalle: a, motor: 'analitica-v1', fuente: this.tipo });
+          continue;
+        }
         const clases = r.clase === 'movimiento' ? null : V.GRUPOS_CLASE[r.clase];
         const hit = r.clase === 'movimiento' ? (f.mov && f.mov.movimiento) : f.dets.some(d => clases.includes(d.clase) && d.score >= 0.5);
         if (!hit) continue;
@@ -120,7 +133,7 @@
     if (!a || a.org !== cam.org) return { conectada: false, motivo: cam.tipo === 'rtsp' ? 'Fuente RTSP configurada; el navegador no puede conectarse a RTSP sin agente de borde.' : 'No hay transmisión activa para esta cámara.' };
     const f = a.snapshot();
     if (!f) return { conectada: true, estado: a.estado, sinCuadros: true, tipo: a.tipo };
-    return { conectada: true, estado: a.estado, tipo: a.tipo, frame: f, edadS: (Date.now() - f.ts) / 1000, rec: a.rec || null, segmentos: a.segs.length, analisis: a.analisis };
+    return { conectada: true, estado: a.estado, tipo: a.tipo, frame: f, edadS: (Date.now() - f.ts) / 1000, rec: a.rec || null, segmentos: a.segs.length, analisis: a.analisis, analitica: a.motor && (a.cam.analitica || a.motor.tamper.activo != null) ? a.motor.estadoActual() : null };
   };
   /** Cuadros del búfer en vivo dentro de los últimos N segundos. */
   L.recent = function (cam, segundos) { const a = L.get(cam.id); if (!a || a.org !== cam.org) return []; const lim = Date.now() - segundos * 1000; return a.ring.filter(f => f.ts >= lim); };

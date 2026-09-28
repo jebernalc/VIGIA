@@ -1,37 +1,35 @@
-OK    SHA-256: vectores conocidos y cálculo incremental = WebCrypto (31 ms)
+OK    SHA-256: vectores conocidos y cálculo incremental = WebCrypto (25 ms)
        3 vectores OK
-OK    Autenticación: organizaciones de prueba, credenciales y selección de organización (64 ms)
+OK    Autenticación: organizaciones de prueba, credenciales y selección de organización (68 ms)
        8 usuarios, 2 organizaciones, contraseñas aleatorias
-OK    Carga de video: original conservado con SHA-256 y metadatos (5873 ms)
+OK    Carga de video: original conservado con SHA-256 y metadatos (5633 ms)
        muestra_cam01_vp9.mp4 · 00:03:20 · vp09.00.21.08 · 201 miniaturas · inicio 2026-09-20T19:00:00.000Z (metadatos_contenedor)
-OK    Extracción de fotograma auténtico (resolución nativa, hash, referencia) (73 ms)
+OK    Extracción de fotograma auténtico (resolución nativa, hash, referencia) (72 ms)
        640×360 en 90.000 s
-OK    Clip: duración, límites y referencia correctos; hash del derivado (418 ms)
+OK    Clip: duración, límites y referencia correctos; hash del derivado (488 ms)
        mp4cut v1 · copia de flujo (stream copy) de muestras y stsd originales · 60.000→90.000 s · 276.2 KB
-OK    Ventanas de tiempo y resolución hora de reloj / posición (8 ms)
+OK    Ventanas de tiempo y resolución hora de reloj / posición (11 ms)
        decisión: posicion (posición dentro del archivo «muestra_cam01_vp9.mp4» (no coincide con el horario del archivo))
 OK    Búsqueda limitada a cámara y periodo (4 ms)
        3 hallazgos en total · 1 en 00:00:21–00:00:35
-OK    Chat: recorrido principal con evidencia real (813 ms)
+OK    Chat: recorrido principal con evidencia real (993 ms)
        No puedo afirmar ni descartar personas o vehículos: falta análisis compatible o cobertura. Cámara 1 · 20/09/2026, 14:01:00 UTC-5 → 14:03:00 …
-OK    Respuestas honestas: cámara desconectada y ausencia de detecciones (10 ms)
+OK    Respuestas honestas: cámara desconectada y ausencia de detecciones (14 ms)
        Sin evidencia: el análisis no detectó movimiento en la ventana consultada. Cámara 1 · 20/09/2026, 14
-OK    Expediente e informe con fuentes, hashes y limitaciones (HTML + PDF) (198 ms)
+OK    Expediente e informe con fuentes, hashes y limitaciones (HTML + PDF) (250 ms)
        informe v1 · 35.6 KB HTML · PDF 33.1 KB
-OK    Aislamiento entre organizaciones (cámaras, archivos, hallazgos, chats, clips, expedientes) (27 ms)
+OK    Aislamiento entre organizaciones (cámaras, archivos, hallazgos, chats, clips, expedientes) (29 ms)
        20 comprobaciones de acceso cruzado denegadas
-OK    Permisos por rol (descarga, confirmación, gestión) (39 ms)
+OK    Permisos por rol (descarga, confirmación, gestión) (12 ms)
        operador/directivo/supervisor/investigador verificados
 OK    Retención: evidencia en expediente protegido no puede borrarse (2 ms)
        borrado bloqueado
-OK    Auditoría encadenada: íntegra y detecta alteración (5 ms)
-       32 registros verificados; alteración detectada en aud_01M3GBZJK24S7FQWAVV5
+OK    Auditoría encadenada: íntegra y detecta alteración (4 ms)
+       32 registros verificados; alteración detectada en aud_01M3KBK5FYYDXQ4WB21N
 OK    Inyección de instrucciones: texto no altera permisos ni alcance (3 ms)
        intención: fotogramas
-OK    Motor IA local: detecta persona real en la ventana correcta (205624 ms)
-       00:01:26–00:01:46 88% · personas en 0–60 s: 0
+OK    Analítica: conteo por línea, ingreso en grupo, intrusión, merodeo, mal estacionado, puerta y manipulación (motor determinista) (385 ms)
+       cruce_linea=5, intrusion=1, merodeo=1, ingreso_grupal=1, aglomeracion=1, puerta_abierta=1, mal_parqueado=1, manipulacion=1
 
-16 correctas, 0 fallidas, 213.2 s
-Errores de consola:
-Failed to load resource: net::ERR_FILE_NOT_FOUND
+16 correctas, 0 fallidas, 8.0 s
 exit 0

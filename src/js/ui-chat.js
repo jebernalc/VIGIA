@@ -7,7 +7,7 @@
     ['ahora', { modo: 'ahora', texto: 'ahora' }], ['30 s', { modo: 'ultimos', segundos: 30, texto: 'últimos 30 s' }], ['5 min', { modo: 'ultimos', segundos: 300, texto: 'últimos 5 min' }],
     ['15 min', { modo: 'ultimos', segundos: 900, texto: 'últimos 15 min' }], ['1 h', { modo: 'ultimos', segundos: 3600, texto: 'última hora' }], ['todo', { modo: 'todo', texto: 'toda la grabación' }]
   ];
-  const SUGS = ['¿Qué cámaras tengo?', 'Muéstrame fotogramas de cámara 1 en los últimos 5 minutos disponibles', 'Encuentra personas o vehículos entre 00:01:00 y 00:03:00', 'Extrae un clip desde 10 segundos antes hasta 20 segundos después de este hallazgo', 'Amplía cinco minutos antes', '¿Qué sucede ahora en la cámara 1?', 'Abre un caso con este hallazgo', 'Indicadores'];
+  const SUGS = ['¿Cuántas personas han ingresado al salón?', 'Vehículos mal parqueados', 'Persona vestida de naranja', '¿La puerta quedó abierta?', '¿Hubo humo en alguna cámara?', 'Objetos abandonados', '¿Alguien tapó la cámara?', '¿Qué cámaras tengo?', 'Muéstrame fotogramas de cámara 1 en los últimos 5 minutos disponibles', 'Encuentra personas o vehículos entre 00:01:00 y 00:03:00', 'Extrae un clip desde 10 segundos antes hasta 20 segundos después de este hallazgo', 'Amplía cinco minutos antes', '¿Qué sucede ahora en la cámara 1?', 'Abre un caso con este hallazgo', 'Indicadores'];
 
   const view = A.views.chat = {};
   view.render = async function (m) {
@@ -156,13 +156,28 @@
   let recCache = {}; async function rec(id) { if (!recCache[id] || !recCache[id].indexado) recCache[id] = await A.api.getRecording(A.token, id); return recCache[id]; }
   view.findingCard = findingCard;
 
+  function detalleTxt(d) {
+    const p = [];
+    if (d.duracionS != null) p.push('duración ' + Math.round(d.duracionS) + ' s (umbral ' + d.umbralS + ' s)');
+    if (d.sentido) p.push('sentido: ' + d.sentido);
+    if (d.personas) p.push(d.personas + ' personas en ' + d.ventanaS + ' s');
+    if (d.pico) p.push('pico ' + d.pico + ' personas (umbral ' + d.umbral + ')');
+    if (d.tipo) p.push('tipo: ' + d.tipo);
+    if (d.diferenciaMax != null) p.push(Math.round(d.diferenciaMax * 100) + '% de la puerta cambió');
+    if (d.areaMaxCeldas) p.push('área ' + d.areaMaxCeldas + ' celdas');
+    if (d.criterio) p.push(d.criterio);
+    return p.join(' · ');
+  }
   async function findingCard(f, compact) {
     const r = f.recordingId ? await rec(f.recordingId) : null; const c = await cam(f.cameraId);
     const color = A.claseColor(f.clase);
     return `<div class="fcard"><div class="img"><img alt="Miniatura del hallazgo ${esc(f.etiqueta)}" data-media="fotograma:${f.frameId}">${A.bboxHTML(f.bbox, f.etiqueta + ' ' + Math.round(f.score * 100) + '%', color)}
       <div class="ov"><span class="badge">${esc(c.codigo)}</span>${r ? '<span class="badge">HISTÓRICO</span>' : ''}</div></div>
       <div class="meta"><div class="row"><b style="color:${color}">${esc(f.etiqueta)}</b>${A.estadoBadge(f.estado)}</div>
-      <div>${r ? A.tiempo(r, f.inicio, c.tz) : ''}</div><div class="muted">Intervalo ${V.fmtDur(f.inicio)}–${V.fmtDur(f.fin)} · ${f.n} muestra(s) · máx. ${Math.round(f.score * 100)}%</div>
+      <div>${r ? A.tiempo(r, f.inicio, c.tz) : ''}</div><div class="muted">Intervalo ${V.fmtDur(f.inicio)}–${V.fmtDur(f.fin)}${f.fin > f.inicio ? ' (' + Math.round(f.fin - f.inicio) + ' s)' : ''} · ${f.categoria === 'analitica' ? 'evento de analítica' : f.n + ' muestra(s)'} · ${Math.round(f.score * 100)}%</div>
+      ${f.experimental ? '<div><span class="badge warn">EXPERIMENTAL · verificar visualmente</span></div>' : ''}
+      ${f.atributos && (f.atributos.superior || f.atributos.inferior) ? '<div class="row" style="gap:4px"><span class="tiny muted">Color aprox.:</span>' + (f.atributos.superior ? '<span class="badge">superior: ' + esc(f.atributos.superior) + '</span>' : '') + (f.atributos.inferior ? '<span class="badge">inferior: ' + esc(f.atributos.inferior) + '</span>' : '') + '</div>' : ''}
+      ${f.detalle ? '<div class="tiny muted">' + esc(detalleTxt(f.detalle)) + '</div>' : ''}
       <div class="muted tiny">Motivo: detección «${esc(f.motor)}» · validación: ${f.estado === 'sugerido' ? 'pendiente de revisión humana' : esc(f.estado + ' por ' + (f.revisadoPor || ''))}</div></div>
       <div class="acts"><button class="btn xs" data-act="ver" data-rec="${f.recordingId}" data-t="${f.tMejor}" data-h="${f.id}">${I.play} ver</button><button class="btn xs" data-act="clip-h" data-h="${f.id}">${I.clip} extraer clip</button><button class="btn xs" data-act="caso" data-tipo="hallazgo" data-id="${f.id}">${I.case} añadir al caso</button>
       ${compact ? '' : `<button class="btn xs" data-act="rev" data-h="${f.id}" data-e="revisado" title="Marcar como revisado">✓</button><button class="btn xs" data-act="rev" data-h="${f.id}" data-e="descartado" title="Descartar (falso positivo)">✗</button><button class="btn xs" data-act="rev" data-h="${f.id}" data-e="confirmado" title="Confirmar incidente">‼</button>`}<button class="btn xs ghost" data-act="sel-h" data-h="${f.id}" title="Usar como «este hallazgo» en el chat">usar en chat</button></div></div>`;
@@ -218,6 +233,12 @@
       case 'camaras': { const cs = await A.api.listCameras(A.token); return '<table class="table"><tr><th>#</th><th>Cámara</th><th>Tipo</th><th>Zona horaria</th><th>Estado</th></tr>' + cs.map(x => { const l = V.live.get(x.id); return `<tr><td>${x.numero}</td><td>${esc(x.nombre)}<div class="tiny muted">${esc([x.sede, x.zona, x.ubicacion].filter(Boolean).join(' · '))}</div></td><td>${esc(x.tipo)}</td><td>${esc(x.tz)}</td><td>${l ? '<span class="badge ok">' + esc(l.estado) + ' · ' + esc(l.tipo) + '</span>' : '<span class="badge">sin transmisión</span>'} · ${x.grabaciones} grabación(es)</td></tr>`; }).join('') + '</table>'; }
       case 'regla_preview': { const cm = await cam(c.cameraId); return `<div class="card"><b>Regla propuesta</b><div class="small" style="margin:6px 0">Si <b>${esc(c.clase)}</b> en <b>Cámara ${cm.numero} · ${esc(cm.nombre)}</b> → alerta interna a <b>${esc(c.destinatario)}</b> · vigencia <b>${c.duracionMin} min</b> · cooldown 30 s.</div>${c.advertencia ? '<div class="alert-box small">El motor IA no está cargado.</div>' : ''}<div class="row" style="margin-top:8px"><button class="btn sm pri" data-act="regla-ok" data-r="${esc(JSON.stringify(c))}">Confirmar y activar</button><span class="tiny muted">La activación queda auditada. No se envía nada fuera de la aplicación.</span></div></div>`; }
       case 'aclaracion': return `<div class="card"><b class="small">${esc(c.pregunta)}</b><div class="row" style="margin-top:6px">${c.opciones.map(o => `<button class="chip" data-act="aclarar" data-cams="${esc(JSON.stringify(o.cameraIds || [o.cameraId]))}">${esc(o.etiqueta)}</button>`).join('')}</div></div>`;
+      case 'conteo': {
+        const lin = c.lineas.map(l => `<tr><td>${esc(l.camara)}</td><td>${esc(l.linea)}${l.vivo ? ' <span class="badge ok">en vivo</span>' : ''}</td><td><b>${l.entradas}</b></td><td><b>${l.salidas}</b></td><td class="small">${(l.cruces || []).map(x => `<button class="chip" style="padding:1px 7px;margin:1px" ${l.recordingId ? `data-act="ver" data-rec="${l.recordingId}" data-t="${x.t}"` : ''} title="${x.sentido}">${x.sentido === 'entrada' ? '→' : '←'} ${l.horaInicio ? esc(V.fmtTime(l.horaInicio + x.t * 1000, l.tz).replace(/ UTC.*/, '')) : V.fmtDur(x.t)}${x.tailgating ? ' ⇉' : ''}</button>`).join('')}</td></tr>`).join('');
+        return `<div class="card"><div class="row"><div class="kpi" style="padding:8px 14px"><div class="l">Ingresos</div><div class="v" style="font-size:24px">${c.entradas}</div></div><div class="kpi" style="padding:8px 14px"><div class="l">Salidas</div><div class="v" style="font-size:24px">${c.salidas}</div></div><div class="kpi" style="padding:8px 14px"><div class="l">Neto</div><div class="v" style="font-size:24px">${c.entradas - c.salidas >= 0 ? '+' : ''}${c.entradas - c.salidas}</div></div>${c.ocupacion.map(o => `<div class="kpi" style="padding:8px 14px"><div class="l">Ocupación máx. · ${esc(o.zona)}</div><div class="v" style="font-size:24px">${o.max}</div></div>`).join('')}</div>
+          ${lin ? `<table class="table small" style="margin-top:8px"><tr><th>Cámara</th><th>Línea</th><th>Entradas</th><th>Salidas</th><th>Cruces (clic para ver)</th></tr>${lin}</table>` : ''}
+          ${(c.cobertura || []).filter(x => !x.soportaConteo || !x.analizado).map(x => '<div class="alert-box small" style="margin-top:6px">' + esc(x.camara) + ': ' + esc(x.motivo || 'grabación sin análisis') + '</div>').join('')}</div>`;
+      }
       case 'pendiente': return '<div class="alert-box info small">Índice pendiente: el trabajo de indexación está en curso. Vea el progreso en Centro de operaciones.</div>';
       case 'sin_cobertura': return '<div class="alert-box small">Sin cobertura para la ventana solicitada.</div>';
       case 'ayuda': return `<div class="card small"><b>Ejemplos</b><ul style="margin:6px 0 0 0;padding-left:18px">${SUGS.map(s => '<li>' + esc(s) + '</li>').join('')}<li>Busca movimiento en cámaras 1 y 2 durante la última hora</li><li>Avísame si aparece una persona en la cámara 1 durante 30 minutos</li><li>Resume el caso EXP-2026-0001 · Genera el informe del caso</li></ul></div>`;

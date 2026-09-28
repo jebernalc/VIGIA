@@ -21,17 +21,42 @@
     return null;
   }
 
+  // Eventos de analítica (se evalúan antes que las clases genéricas)
+  const EVENTOS = [
+    { re: /\bpuertas? (abiertas?|sin cerrar|quedo abierta|quedaron abiertas)|\babrieron la puerta|\bpuerta\b.*\babierta/, g: 'puerta_abierta' },
+    { re: /\b(humo|incendios?|fuego|conato)\b/, g: 'humo' },
+    { re: /\b(mal (parqueados?|estacionados?|parqueadas?|estacionadas?)|parqueo indebido|estacionamiento indebido|zona de no (parquear|parqueo|estacionar)|parqueados? donde no)\b/, g: 'mal_parqueado' },
+    { re: /\b(merodeo|merodeando|merodea|merodearon|rondando|permanece|permanecio|permanecieron|tiempo en (la )?zona|sospechos[oa]s? quiet[oa]s?)\b/, g: 'merodeo' },
+    { re: /\b(intrusion(es)?|intrus[oa]s?|zona restringida|ingreso no autorizado|acceso no autorizado|entraron a la bodega)\b/, g: 'intrusion' },
+    { re: /\b(objetos? abandonados?|paquetes? abandonados?|bultos?|maletas? abandonadas?|objeto sospechoso|dejaron (algo|un objeto|una caja))\b/, g: 'objeto_abandonado' },
+    { re: /\b(manipulacion|sabotaje|vandalismo de camara|camaras? (tapadas?|cubiertas?|obstruidas?|movidas?|desenfocadas?|bloqueadas?)|(tapo|taparon|cubrio|cubrieron|obstruyo|obstruyeron|bloqueo|bloquearon|movio|movieron|giraron|desenfoco|desenfocaron) (la |las )?camaras?)\b/, g: 'manipulacion' },
+    { re: /\b(aglomeracion(es)?|multitud(es)?|ocupacion maxima|sobrecupo|exceso de aforo)\b/, g: 'aglomeracion' },
+    { re: /\b(en grupo|tailgating|colados?|se colaron|entraron juntos|ingreso grupal)\b/, g: 'ingreso_grupal' },
+    { re: /\b(cruces? de linea|cruzaron la linea|cruzo la linea)\b/, g: 'cruce_linea' }
+  ];
+  const COLORES = { negro: 'negro', negra: 'negro', negros: 'negro', negras: 'negro', oscuro: 'negro', blanco: 'blanco', blanca: 'blanco', blancos: 'blanco', blancas: 'blanco', gris: 'gris', grises: 'gris', rojo: 'rojo', roja: 'rojo', rojos: 'rojo', rojas: 'rojo', naranja: 'naranja', naranjas: 'naranja', anaranjado: 'naranja', anaranjada: 'naranja', amarillo: 'amarillo', amarilla: 'amarillo', verde: 'verde', verdes: 'verde', azul: 'azul', azules: 'azul', celeste: 'azul', morado: 'morado', morada: 'morado', violeta: 'morado', lila: 'morado', rosado: 'rosado', rosada: 'rosado', rosa: 'rosado', fucsia: 'rosado', marron: 'marrón', cafe: 'marrón', beige: 'marrón' };
+  const PRENDA_SUP = /\b(camisa|camiseta|chaqueta|saco|buzo|blusa|abrigo|chaleco|sudadera|polo|chamarra|uniforme|parte superior|torso)\b/;
+  const PRENDA_INF = /\b(pantalon(es)?|jean(s)?|falda|short(s)?|bermuda|sudadera de abajo|parte inferior|piernas)\b/;
+  function atributosDe(t) {
+    const re = new RegExp('\\b(' + Object.keys(COLORES).join('|') + ')\\b', 'g'); const out = {}; let m;
+    while ((m = re.exec(t))) {
+      const c = COLORES[m[1]]; const antes = t.slice(Math.max(0, m.index - 28), m.index);
+      if (PRENDA_INF.test(antes)) out.inferior = c; else if (PRENDA_SUP.test(antes)) out.superior = c; else if (!out.cualquiera) out.cualquiera = c;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
   const CLASES = [
     { re: /\b(personas?|gente|individuos?|peatones?|sujetos?|hombres?|mujeres?|alguien)\b/, g: 'persona' },
     { re: /\b(vehiculos?|carros?|autos?|automoviles?|coches?|motos?|motocicletas?|camion(es)?|camionetas?|bus(es)?|buses|bicicletas?|bicis?)\b/, g: 'vehiculo' },
     { re: /\b(animales?|gatos?|perros?)\b/, g: 'animal' },
-    { re: /\b(mochilas?|bolsos?|maletas?|objetos? abandonados?)\b/, g: 'objeto' },
+    { re: /\b(mochilas?|bolsos?|maletas?)\b/, g: 'objeto' },
     { re: /\b(movimientos?|actividad|cambios?)\b/, g: 'movimiento' }
   ];
 
   function camarasDe(t, ctx) {
     const cams = ctx.camaras || [], out = new Set(); let origen = null;
-    if (/\btodas las camaras\b|\ben todas\b|\bcualquier camara\b/.test(t)) { cams.forEach(c => out.add(c.id)); return { ids: [...out], origen: 'todas' }; }
+    if (/\btodas las camaras\b|\ben todas\b|\bcualquier camara\b|\balgunas? (de las )?camaras?\b|\ben las camaras\b/.test(t)) { cams.forEach(c => out.add(c.id)); return { ids: [...out], origen: 'todas' }; }
     // grupos
     for (const g of (ctx.grupos || [])) { const n = norm(g.nombre); if (n && (t.includes('grupo ' + n) || new RegExp('\\b' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(t))) { g.cameraIds.forEach(i => out.add(i)); origen = 'grupo:' + g.nombre; } }
     // "camara(s) 1, 2 y 3" | "cam 2" | "cam-01"
@@ -39,6 +64,7 @@
     if (m) { m[1].split(/\s*(?:,|y|e)\s*/).map(Number).forEach(n => { const c = cams.find(c => c.numero === n) || cams.find(c => norm(c.codigo) === 'cam-' + String(n).padStart(2, '0')); if (c) out.add(c.id); else out.add('__no_existe_' + n); }); origen = origen || 'mencionada'; }
     // por nombre
     for (const c of cams) { const n = norm(c.nombre); if (n.length >= 4 && t.includes(n)) { out.add(c.id); origen = origen || 'mencionada'; } }
+    if (!out.size) for (const c of cams) { const ws = norm(c.nombre).replace(/\(.*?\)/g, '').split(/[^a-z0-9]+/).filter(w => w.length >= 5 && !['camara', 'principal', 'entrada', 'general'].includes(w)); if (ws.some(w => new RegExp('\\b' + w + 's?\\b').test(t))) { out.add(c.id); origen = origen || 'mencionada (por nombre)'; } }
     return { ids: [...out], origen };
   }
 
@@ -70,7 +96,11 @@
     const has = re => re.test(t);
 
     // ---- clases ----
-    for (const c of CLASES) if (c.re.test(t)) plan.clases.push(c.g);
+    const eventos = EVENTOS.filter(e => e.re.test(t)).map(e => e.g);
+    if (eventos.length) plan.clases = eventos;
+    else for (const c of CLASES) if (c.re.test(t)) plan.clases.push(c.g);
+    const atr = atributosDe(t);
+    if (atr && (plan.clases.includes('persona') || /\b(vestid[oa]s?|de color|con (camisa|camiseta|chaqueta|saco|buzo|blusa|pantalon|jean|falda|uniforme))\b/.test(t))) { plan.atributos = atr; plan.clases = ['persona']; }
     if (plan.clases.length > 1 && plan.clases.includes('movimiento') && /\b(sin clasificar|solo movimiento)\b/.test(t) === false) plan.clases = plan.clases.filter(c => c !== 'movimiento' || !/\bcambios?\b/.test(t));
 
     // ---- intención ----
@@ -79,6 +109,7 @@
     else if (esSeguimiento && plan.clases.length) { plan.intent = (est.ultimoIntent === 'fotogramas' || !est.ultimoIntent) ? 'buscar' : est.ultimoIntent; plan.supuestos.push('Consulta de seguimiento: se reutilizan cámara y ventana anteriores con las nuevas clases.'); plan.seguimiento = true; }
     else if (has(/\b(amplia|ampliar|extiende|extender|agranda)\b/) || has(/^(y )?(\d+(?:[.,]\d+)?)\s*(segundos?|minutos?|horas?)\s+(mas\s+)?(antes|despues)\b/)) plan.intent = 'ampliar';
     else if (has(/\b(resume|resumen|resumir|estado del?)\b.*\b(caso|expediente)\b/)) plan.intent = 'resumir_caso';
+    else if (!has(/\b(indicadores?|detecciones|hallazgos|expedientes|alertas|clips)\b/) && (has(/\bcuant[oa]s\b.*\b(ingres\w*|entr\w*|sal\w*|cruz\w*)\b/) || has(/\bcuant[oa]s\b.*\b(personas?|gente|vehiculos?|carros?|motos?|visitantes?)\b.*\b(hay|habia|estan|pasaron|visitaron)\b/) || has(/\b(conteo|aforo|contar|ocupacion actual|ocupacion del|flujo de personas|ingresos y salidas)\b/))) plan.intent = 'conteo';
     else if (has(/\b(genera|generar|crea|crear|elabora|elaborar|haz)\b.*\binforme\b/)) plan.intent = 'informe';
     else if (has(/\b(anade|agrega|anadir|agregar|adjunta|adjuntar|incluye|incluir)\b.*\b(caso|expediente)\b/)) plan.intent = 'agregar_caso';
     else if (has(/\b(abre|abrir|crea|crear|inicia|iniciar|nuevo)\b.*\b(caso|expediente)\b/)) plan.intent = 'abrir_caso';
@@ -89,6 +120,7 @@
     else if (has(/\b(fotogramas?|imagen(es)?|capturas?|fotos?|cuadros?|muestrame|mostrar|muestra|ver)\b/)) plan.intent = has(/\b(ahora|en vivo|en este momento)\b/) ? 'ahora' : 'fotogramas';
     else if (has(/\b(camaras|camara)\b/) && has(/\b(que|cuales|lista|listar|estado|disponibles|tengo|hay)\b/)) plan.intent = 'listar_camaras';
 
+    if (plan.intent === 'conteo') { plan.conteo = { clase: plan.clases.includes('vehiculo') ? 'vehiculo' : 'persona', sentido: has(/\bsal\w*/) && !has(/\b(ingres|entr)\w*/) ? 'salida' : 'entrada' }; }
     // ---- cámaras ----
     const cm = camarasDe(t, ctx);
     plan.camaras = cm.ids.filter(i => !i.startsWith('__'));
@@ -135,18 +167,18 @@
     // ---- regla ----
     if (plan.intent === 'regla') {
       const md = t.match(/\b(?:durante|por|en los proximos|las proximas|los proximos|proximos|proximas)\s+(\d+(?:[.,]\d+)?)\s*(minutos?|min|m|horas?|h)\b/);
-      const clase = plan.clases.find(c => ['persona', 'vehiculo', 'movimiento'].includes(c)) || null;
+      const clase = plan.clases.find(c => ['persona', 'vehiculo', 'movimiento', 'puerta_abierta', 'humo', 'mal_parqueado', 'merodeo', 'intrusion', 'objeto_abandonado', 'manipulacion', 'aglomeracion', 'ingreso_grupal'].includes(c)) || null;
       plan.regla = { clase, duracionMin: md ? parseFloat(md[1].replace(',', '.')) * UNIT(md[2]) / 60 : 30, destinatario: /\bsupervisor/.test(t) ? 'rol:supervisor' : /\ba mi\b|\bme\b|\bavisame|alertame|notificame/.test(t) ? 'yo' : 'rol:supervisor' };
       if (!md) plan.supuestos.push('Sin duración indicada: la regla dura 30 minutos.');
       if (!clase) plan.faltantes.push('clase_regla');
     }
 
     // ---- faltantes y supuestos ----
-    const necesitaCam = ['fotogramas', 'buscar', 'ahora', 'regla'].includes(plan.intent);
+    const necesitaCam = ['fotogramas', 'buscar', 'ahora', 'regla', 'conteo'].includes(plan.intent);
     if (necesitaCam && !plan.camaras.length) plan.faltantes.push('camara');
     if (plan.camarasOrigen === 'seleccion') plan.supuestos.push('No se mencionó cámara: se usa la selección actual del panel.');
     if (plan.camarasOrigen === 'contexto') plan.supuestos.push('Se reutilizan las cámaras de la consulta anterior.');
-    if (['fotogramas', 'buscar'].includes(plan.intent) && !plan.ventana) {
+    if (['fotogramas', 'buscar', 'conteo'].includes(plan.intent) && !plan.ventana) {
       if (plan.seguimiento && est.ultimaVentana) { plan.ventana = est.ultimaVentana; }
       else if (ctx.seleccion && ctx.seleccion.ventana) { plan.ventana = ctx.seleccion.ventana; plan.supuestos.push('Sin ventana en el texto: se usa la ventana seleccionada (' + (ctx.seleccion.ventana.texto || '') + ').'); }
       else { plan.ventana = { modo: 'todo', texto: 'toda la grabación disponible' }; plan.supuestos.push('Sin ventana: se consulta toda la grabación disponible.'); }
@@ -161,7 +193,7 @@
   const INTENTS = {
     ayuda: 'Ayuda', listar_camaras: 'Consultar cámaras', fotogramas: 'Solicitar fotogramas', ahora: '¿Qué sucede ahora?', buscar: 'Buscar eventos',
     clip: 'Extraer clip', abrir_caso: 'Abrir expediente', agregar_caso: 'Añadir al expediente', resumir_caso: 'Resumir expediente', informe: 'Generar informe',
-    indicadores: 'Consultar indicadores', regla: 'Regla de vigilancia temporal', ampliar: 'Ampliar ventana (seguimiento)', desconocido: 'No reconocida'
+    indicadores: 'Consultar indicadores', conteo: 'Conteo de entradas/salidas y ocupación', regla: 'Regla de vigilancia temporal', ampliar: 'Ampliar ventana (seguimiento)', desconocido: 'No reconocida'
   };
   const api = { interpretar, norm, INTENTS, hms };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

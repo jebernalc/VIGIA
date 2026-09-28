@@ -188,14 +188,21 @@
       const existentes = await db.by('frames', 'recordingId', rec.id);
       const hacerMiniaturas = !existentes.length;
       const hacerMov = !(rec.motores || []).includes('movimiento-v1');
-      if (!hacerMiniaturas && !hacerMov && !usarIA) {
+      const AN = V.analitica;
+      const hacerAna = !!AN && (!(rec.motores || []).includes('analitica-v1') || !!job.opciones.analitica || usarIA);
+      if (!hacerMiniaturas && !hacerMov && !usarIA && !hacerAna) {
         await h.update(job, { estado: 'completado', progreso: 1, etapa: job.opciones.ia ? 'sin cambios: el motor IA no está cargado' : 'sin cambios', finalizadoEn: Date.now(), duracionMs: Math.round(performance.now() - t0), videoS: 0 });
         return;
       }
-      await h.update(job, { etapa: 'muestreo de fotogramas' + (usarIA ? ' + IA' : '') + (hacerMov ? ' + movimiento' : ''), progreso: 0.03 });
+      // detecciones IA previas (para reanalizar la analítica sin volver a ejecutar la IA)
+      const previasIA = new Map();
+      if (hacerAna && !usarIA) (await db.by('detections', 'recordingId', rec.id)).filter(d => d.motor && d.motor.startsWith('coco')).forEach(d => { const k = d.t; if (!previasIA.has(k)) previasIA.set(k, []); previasIA.get(k).push(d); });
+      const hayIA = usarIA || previasIA.size > 0;
+      await h.update(job, { etapa: 'muestreo de fotogramas' + (usarIA ? ' + IA' : '') + (hacerMov ? ' + movimiento' : '') + (hacerAna ? ' + analítica' : ''), progreso: 0.03 });
       v = await M.openVideo(blob);
       const paso = rec.duracion > 3600 ? 2 : 1; // perfil estándar: 1 fps (2 s en archivos > 1 h)
       const md = new MotionDetector(cam ? cam.mascaras : []);
+      const motor = hacerAna ? new AN.Motor(cam) : null;
       const frames = []; const dets = [];
       const byT = new Map(existentes.map(f => [f.t, f]));
       const N = Math.floor(rec.duracion / paso) + 1;
@@ -218,11 +225,19 @@
           if (m.movimiento) dets.push({ id: V.id('det'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, frameId: fr.id, t, tAbs, clase: 'movimiento', score: +m.score.toFixed(3), bbox: m.cajas[0] || null, motor: 'movimiento-v1' });
           if (!frames.includes(fr)) frames.push(fr);
         }
+        let iaFrame = null;
         if (usarIA) {
           M.draw(v, 640, cIA);
           const r = await IA.detectar(cIA);
-          (r || []).forEach(d => dets.push({ id: V.id('det'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, frameId: fr.id, t, tAbs, clase: d.clase, score: +d.score.toFixed(3), bbox: d.bbox, motor: IA.motorId }));
-        }
+          let img = null;
+          iaFrame = (r || []).map(d => {
+            const det = { id: V.id('det'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, frameId: fr.id, t, tAbs, clase: d.clase, score: +d.score.toFixed(3), bbox: d.bbox, motor: IA.motorId };
+            if (AN && d.clase === 'person' && d.score >= 0.5) { img = img || cIA.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cIA.width, cIA.height); det.atributos = AN.atributosPersona(img, d.bbox); }
+            return det;
+          });
+          iaFrame.forEach(d => dets.push(d));
+        } else if (previasIA.size) iaFrame = previasIA.get(t) || [];
+        if (motor) motor.frame({ t, frameId: fr.id, canvas: c, dets: hayIA ? (iaFrame || []) : null });
         if (k % 10 === 0 || k === N - 1) {
           await db.putMany('frames', frames.splice(0));
           await h.update(job, { progreso: 0.05 + 0.85 * (k + 1) / N, etapa: 'analizando ' + V.fmtDur(t) + ' / ' + V.fmtDur(rec.duracion) });
@@ -231,20 +246,56 @@
       await db.putMany('frames', frames);
       await db.putMany('detections', dets);
       // 3) hallazgos sugeridos
-      await h.update(job, { etapa: 'agrupando hallazgos', progreso: 0.93 });
-      const grupos = M.groupFindings(dets);
+      await h.update(job, { etapa: 'agrupando hallazgos y eventos', progreso: 0.93 });
+      const esSeguible = c => AN && (V.GRUPOS_CLASE.persona.includes(c) || V.GRUPOS_CLASE.vehiculo.includes(c));
+      const conSeguimiento = !!motor && hayIA;
+      if (motor) {
+        // reemplazar resultados previos de analítica (sólo los no revisados y no vinculados a expedientes)
+        const evid = new Set((await db.by('evidence', 'org', job.org)).map(e => e.refId));
+        for (const f of await db.by('findings', 'recordingId', rec.id)) {
+          const reemplazable = f.estado === 'sugerido' && !evid.has(f.id) && (f.categoria === 'analitica' || (conSeguimiento && (f.trackId != null || (f.motor && f.motor.startsWith('coco') && esSeguible(f.clase)))));
+          if (reemplazable) await db.del('findings', f.id);
+        }
+        for (const a of await db.by('analysis', 'recordingId', rec.id)) await db.del('analysis', a.id);
+      }
+      // Clases COCO relevantes para vigilancia; el resto (p. ej. «tv», «corbata») queda en detecciones pero no genera hallazgos
+      const RELEVANTES = new Set(['movimiento', 'person', 'car', 'truck', 'bus', 'motorcycle', 'bicycle', 'cat', 'dog', 'horse', 'bird', 'backpack', 'handbag', 'suitcase', 'knife', 'umbrella', 'cell phone', 'bottle', 'fire hydrant', 'train', 'boat', 'airplane']);
+      const grupos = M.groupFindings(dets.filter(d => RELEVANTES.has(d.clase) && !(conSeguimiento && esSeguible(d.clase))));
       const finds = grupos.map(g => ({
         id: V.id('hal'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, fuente: 'grabacion', clase: g.clase, etiqueta: V.claseEs(g.clase),
         inicio: g.inicio, fin: g.fin, n: g.n, score: +g.score.toFixed(3), frameId: g.best.frameId, tMejor: g.best.t, bbox: g.best.bbox, motor: g.motor,
         tAbs: rec.horaInicio != null ? rec.horaInicio + g.inicio * 1000 : null, estado: 'sugerido', creadoEn: Date.now()
       }));
+      let resAna = null;
+      if (motor) {
+        resAna = motor.finish();
+        const frameDe = t => { const all = [...byT.values()]; return motor.frameIds[t] || (all.sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0] || {}).id; };
+        const tDeFrame = {}; Object.entries(motor.frameIds).forEach(([t, id]) => tDeFrame[id] = +t);
+        if (conSeguimiento) for (const p of resAna.pistas) finds.push({
+          id: V.id('hal'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, fuente: 'grabacion', clase: p.clase, trackId: p.trackId,
+          etiqueta: V.claseEs(p.clase) + ' #' + p.trackId,
+          inicio: p.inicio, fin: p.fin, n: p.muestras, score: +p.mejor.score.toFixed(3), frameId: p.mejor.frameId, tMejor: p.mejor.t, bbox: p.mejor.bbox, motor: IA.motorId + '+seguimiento', atributos: p.atributos,
+          tAbs: rec.horaInicio != null ? rec.horaInicio + p.inicio * 1000 : null, estado: 'sugerido', creadoEn: Date.now()
+        });
+        for (const e of resAna.eventos) {
+          const fid = e.frameId || frameDe(e.inicio);
+          finds.push({
+            id: V.id('hal'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, fuente: 'grabacion', categoria: 'analitica', clase: e.tipo,
+            etiqueta: e.etiqueta + (e.sentido ? ' · ' + e.sentido : '') + (e.zona ? ' · ' + e.zona : e.linea ? ' · ' + e.linea : e.puerta ? ' · ' + e.puerta : ''),
+            inicio: e.inicio, fin: e.fin, n: 1, score: +(e.score || 0.7).toFixed(3), frameId: fid, tMejor: tDeFrame[fid] != null ? tDeFrame[fid] : e.inicio, bbox: e.bbox || null,
+            motor: 'analitica-v1', experimental: !!e.experimental, detalle: Object.assign({}, e.detalle || {}, { zona: e.zona, linea: e.linea, puerta: e.puerta, sentido: e.sentido, trackId: e.trackId }),
+            tAbs: rec.horaInicio != null ? rec.horaInicio + e.inicio * 1000 : null, estado: 'sugerido', creadoEn: Date.now()
+          });
+        }
+        await db.put('analysis', { id: V.id('ana'), org: job.org, recordingId: rec.id, cameraId: rec.cameraId, creadoEn: Date.now(), configuracion: cam && cam.analitica || null, resultado: { motor: resAna.motor, ia: resAna.ia, conteos: resAna.conteos, ocupacion: resAna.ocupacion, puertas: resAna.puertas, calor: resAna.calor, parametros: resAna.parametros, muestras: resAna.muestras, pistas: resAna.pistas.map(p => ({ trackId: p.trackId, clase: p.clase, inicio: p.inicio, fin: p.fin, atributos: p.atributos, trayectoria: p.trayectoria })) } });
+      }
       await db.putMany('findings', finds);
-      rec.motores = Array.from(new Set([...(rec.motores || []), ...(hacerMov ? ['movimiento-v1'] : []), ...(usarIA ? [IA.motorId] : [])]));
+      rec.motores = Array.from(new Set([...(rec.motores || []), ...(hacerMov ? ['movimiento-v1'] : []), ...(usarIA ? [IA.motorId] : []), ...(motor ? ['analitica-v1'] : [])]));
       rec.indexado = true; rec.estado = 'indexado'; rec.indexadoEn = Date.now();
-      rec.ultimoIndice = { frames: N, paso, detecciones: dets.length, hallazgos: finds.length };
+      rec.ultimoIndice = { frames: N, paso, detecciones: dets.length, hallazgos: finds.length, eventos: resAna ? resAna.eventos.length : 0 };
       await db.put('recordings', rec);
       const ms = Math.round(performance.now() - t0);
-      await h.update(job, { estado: 'completado', progreso: 1, etapa: 'completado · ' + finds.length + ' hallazgos sugeridos' + (job.opciones.ia && !usarIA ? ' (motor IA no cargado: sólo movimiento)' : ''), finalizadoEn: Date.now(), duracionMs: ms, videoS: rec.duracion, resumen: { detecciones: dets.length, hallazgos: finds.length, ia: usarIA } });
+      await h.update(job, { estado: 'completado', progreso: 1, etapa: 'completado · ' + finds.length + ' hallazgos' + (resAna ? ' (' + resAna.eventos.length + ' eventos de analítica)' : '') + (job.opciones.ia && !usarIA ? ' (motor IA no cargado: sólo movimiento)' : ''), finalizadoEn: Date.now(), duracionMs: ms, videoS: rec.duracion, resumen: { detecciones: dets.length, hallazgos: finds.length, ia: usarIA } });
       await h.audit(job.org, 'indexacion.completar', 'grabacion', rec.id, { ms, detecciones: dets.length, hallazgos: finds.length, motores: rec.motores });
       V.emit('data:changed', { org: job.org });
     } catch (e) {
@@ -320,9 +371,10 @@
   };
 
   // ---------------- video de demostración embebido ----------------
-  M.cargarMuestra = async function () {
-    if (!window.VIGIA_MUESTRA) await loadScript('muestras/muestra_cam01_h264.js');
-    const m = window.VIGIA_MUESTRA; const bin = atob(m.b64); const u = new Uint8Array(bin.length);
+  M.cargarMuestra = async function (cual) {
+    const g = cual === 'casos' ? 'VIGIA_MUESTRA_CASOS' : 'VIGIA_MUESTRA';
+    if (!window[g]) await loadScript(cual === 'casos' ? 'muestras/muestra_casos_h264.js' : 'muestras/muestra_cam01_h264.js');
+    const m = window[g]; const bin = atob(m.b64); const u = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     return new File([u], m.nombre, { type: 'video/mp4' });
   };

@@ -16,6 +16,10 @@ El pedido exigía un producto **que se abra desde cualquier navegador y funcione
 | Tiempo real | Cámara web (getUserMedia) y emulación desde archivo; búfer 5 min; reglas | Agentes de borde RTSP/ONVIF → WebRTC/LL-HLS; búfer en borde |
 | Chat | Intérprete determinista en español + planificador con herramientas acotadas | Igual + adaptador opcional a LLM local; nunca obligatorio |
 
+### Analítica (analitica-v1)
+
+Pipeline por muestra (1 fps): detector IA (opcional) → seguimiento multiobjeto (predicción de velocidad + asignación óptima) → reglas geométricas por zona y línea → análisis de píxeles en rejilla 32×18 (puerta, objeto abandonado, manipulación, humo) → eventos con fotograma, recuadro, parámetros y motivo. El mismo motor corre en la indexación y en vivo (alertas inmediatas por regla). En producción, el agente de borde ejecutará este mismo motor, o su equivalente con modelos en GPU, y enviará sólo eventos y metadatos al plano de control. Ver `CASOS_DE_USO.md`.
+
 ### Flujo del chat
 
 `interpretar (nlp.js) → normalizar zona horaria (chat.js) → autorizar y comprobar cobertura (api.js) → planificar → ejecutar herramientas limitadas (búsqueda, fotogramas, clip, expediente, informe, indicadores, regla) → ensamblar hallazgos → citar evidencia → responder breve + tarjetas`.

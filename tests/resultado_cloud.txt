@@ -1,0 +1,9 @@
+OK  Supabase configurado desde vigia.config.js (clave publicable)
+OK  cliente creado con URL y clave publicable
+OK  filas generadas: {"camaras":1,"grabaciones":1,"hallazgos":3,"derivados":1,"expedientes":1,"evidencias":2,"conteos":0,"analisis":1,"auditoria":10}
+OK  hash del original y del derivado enlazados
+OK  no se envían videos ni referencias a blobs
+OK  auditoría sólo inserta (ignoreDuplicates)
+OK  sincronización registrada en la nube
+OK  sincronización registrada en la auditoría local
+exit 0

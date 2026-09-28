@@ -72,6 +72,26 @@
   }
   function ctEq(a, b) { if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; }
 
+  const R01 = r => ({ x: V.clamp(+r.x || 0, 0, 1), y: V.clamp(+r.y || 0, 0, 1), w: V.clamp(+r.w || 0, 0, 1), h: V.clamp(+r.h || 0, 0, 1) });
+  const P01 = p => ({ x: V.clamp(+p.x || 0, 0, 1), y: V.clamp(+p.y || 0, 0, 1) });
+  const txt = (s, n) => String(s || '').slice(0, n || 60);
+  const num = (v, a, b, d) => { v = +v; return isFinite(v) ? V.clamp(v, a, b) : d; };
+  /** Valida y normaliza la configuración de analítica de una cámara (zonas, líneas, puertas, parámetros). */
+  function validarAnalitica(a) {
+    if (!a) return null;
+    const USOS = ['restringida', 'no_parqueo', 'ocupacion', 'general'];
+    const zonas = (Array.isArray(a.zonas) ? a.zonas : []).slice(0, 20).map((z, i) => {
+      if (!USOS.includes(z.uso)) throw E('VALIDACION', 'Uso de zona inválido: ' + z.uso);
+      return { id: txt(z.id || 'z' + i, 30), nombre: txt(z.nombre || 'Zona ' + (i + 1)), uso: z.uso, rect: R01(z.rect || {}), umbral: z.umbral != null ? num(z.umbral, 1, 500, 5) : undefined, merodeoS: z.merodeoS != null ? num(z.merodeoS, 3, 3600, 20) : undefined, parqueoS: z.parqueoS != null ? num(z.parqueoS, 5, 86400, 30) : undefined };
+    });
+    const lineas = (Array.isArray(a.lineas) ? a.lineas : []).slice(0, 10).map((l, i) => ({ id: txt(l.id || 'l' + i, 30), nombre: txt(l.nombre || 'Línea ' + (i + 1)), a: P01(l.a || {}), b: P01(l.b || {}), sentidoEntrada: +l.sentidoEntrada === -1 ? -1 : 1, clase: ['persona', 'vehiculo'].includes(l.clase) ? l.clase : undefined }));
+    const puertas = (Array.isArray(a.puertas) ? a.puertas : []).slice(0, 10).map((p, i) => ({ id: txt(p.id || 'p' + i, 30), nombre: txt(p.nombre || 'Puerta ' + (i + 1)), rect: R01(p.rect || {}), puertaS: p.puertaS != null ? num(p.puertaS, 1, 86400, 10) : undefined, umbral: p.umbral != null ? num(p.umbral, 0.05, 0.95, 0.5) : undefined }));
+    const pd = (V.analitica && V.analitica.PARAM_DEF) || {}; const pa = a.parametros || {};
+    const parametros = {}; Object.keys(pd).forEach(k => parametros[k] = pa[k] != null ? num(pa[k], 0, 86400, pd[k]) : pd[k]);
+    return { zonas, lineas, puertas, parametros };
+  }
+  V.validarAnalitica = validarAnalitica;
+
   class Api {
     constructor(db, opts) {
       this.db = db; this.sessions = new Map(); this.fails = new Map(); this.urls = new Map();
@@ -255,6 +275,7 @@
         rtspUrl = rtspUrl.replace(/\/\/([^:@\/]+):([^@\/]+)@/, '//$1:***@'); // nunca guardar la contraseña en claro
       }
       const mascaras = Array.isArray(data.mascaras) ? data.mascaras.slice(0, 10).map(m => ({ x: V.clamp(+m.x || 0, 0, 1), y: V.clamp(+m.y || 0, 0, 1), w: V.clamp(+m.w || 0, 0, 1), h: V.clamp(+m.h || 0, 0, 1), nombre: String(m.nombre || '').slice(0, 40) })) : [];
+      const analitica = data.analitica !== undefined ? validarAnalitica(data.analitica) : undefined;
       let cam;
       if (data.id) { cam = await this._own('cameras', data.id, ctx); }
       else {
@@ -263,6 +284,7 @@
       }
       Object.assign(cam, {
         nombre, tz, tipo, rtspUrl, mascaras,
+        analitica: analitica !== undefined ? analitica : (cam.analitica || null),
         codigo: String(data.codigo || ('CAM-' + String(cam.numero).padStart(2, '0'))).slice(0, 20),
         ubicacion: String(data.ubicacion || '').slice(0, 160),
         siteId: await this._ensureNamed('sites', ctx, data.sede), zoneId: await this._ensureNamed('zones', ctx, data.zona),
@@ -360,7 +382,7 @@
         const cases = [...new Set(refs.map(e => e.caseId))];
         throw E('PROTEGIDO', 'La grabación está vinculada a ' + cases.length + ' expediente(s) protegido(s) y no puede eliminarse.', { expedientes: cases });
       }
-      for (const st of ['frames', 'detections', 'findings', 'derivatives']) for (const x of await this.db.by(st, 'recordingId', id)) { await this.db.del(st, x.id); if (x.blobKey) await this.db.del('blobs', x.blobKey); }
+      for (const st of ['frames', 'detections', 'findings', 'derivatives', 'analysis']) for (const x of await this.db.by(st, 'recordingId', id)) { await this.db.del(st, x.id); if (x.blobKey) await this.db.del('blobs', x.blobKey); }
       await this.db.del('blobs', r.blobKey); await this.db.del('recordings', id);
       await this._audit(ctx, 'grabacion.eliminar', 'grabacion', id, { sha256: r.sha256 });
       return { ok: true };
@@ -442,12 +464,15 @@
         if (!w) continue;
         if ((w.b - w.a) > CFG.maxIntervaloConsultaH * 3600) throw E('LIMITE', 'La ventana supera ' + CFG.maxIntervaloConsultaH + ' h.');
         const motores = r.motores || [];
-        const soportaClase = !clases || clases.every(c => c === 'movimiento' ? motores.includes('movimiento-v1') : motores.some(m => m.startsWith('coco')));
-        cobertura.push({ recordingId: r.id, cameraId: r.cameraId, a: w.a, b: w.b, recortada: w.recortada, indexado: r.indexado, motores, soportaClase, estado: r.estado });
+        const cam = cams.find(c => c.id === r.cameraId);
+        const sop = (clases || []).map(c => V.soporteClase(c, motores, cam));
+        const soportaClase = sop.every(x => x.ok);
+        cobertura.push({ recordingId: r.id, cameraId: r.cameraId, a: w.a, b: w.b, recortada: w.recortada, indexado: r.indexado, motores, soportaClase, motivos: sop.filter(x => !x.ok).map(x => x.motivo), estado: r.estado });
         if (!r.indexado) continue;
         let fs = (await this.db.by('findings', 'recordingId', r.id)).filter(f => f.org === ctx.org && f.fin >= w.a && f.inicio <= w.b);
         if (clases) fs = fs.filter(f => clases.includes(f.clase));
         if (q.motor) fs = fs.filter(f => f.motor === q.motor);
+        if (q.atributos) fs = fs.filter(f => f.atributos && (!q.atributos.superior || f.atributos.superior === q.atributos.superior) && (!q.atributos.inferior || f.atributos.inferior === q.atributos.inferior) && (!q.atributos.cualquiera || f.atributos.superior === q.atributos.cualquiera || f.atributos.inferior === q.atributos.cualquiera));
         fs.forEach(f => resultados.push(f));
       }
       resultados.sort((a, b) => (a.tAbs || 0) - (b.tAbs || 0) || a.inicio - b.inicio);
@@ -607,7 +632,7 @@
     async createRule(token, { cameraId, clase, duracionMin, destinatario, confirmado }) {
       const ctx = this._ctx(token); this._need(ctx, 'reglas.crear');
       const cam = await this._own('cameras', cameraId, ctx);
-      if (!['persona', 'vehiculo', 'movimiento'].includes(clase)) throw E('VALIDACION', 'Clase no soportada por las reglas: ' + clase);
+      if (!['persona', 'vehiculo', 'movimiento'].includes(clase) && !(V.analitica && V.analitica.TIPOS[clase] && clase !== 'cruce_linea')) throw E('VALIDACION', 'Clase no soportada por las reglas: ' + clase);
       const d = V.clamp(Math.round(+duracionMin || 30), 1, 24 * 60);
       if (!confirmado) throw E('CONFIRMACION', 'La activación de reglas requiere confirmación explícita.');
       const r = { id: V.id('regla'), org: ctx.org, cameraId: cam.id, clase, desde: Date.now(), hasta: Date.now() + d * 60000, destinatario: String(destinatario || 'rol:supervisor').slice(0, 80), estado: 'activa', creadaPor: ctx.email, creadaEn: Date.now(), disparos: 0 };
@@ -652,6 +677,40 @@
       return recs.filter(r => r.importadoEn < lim).map(r => ({ id: r.id, nombre: r.nombreArchivo, protegido: evs.some(e => e.recordingId === r.id) }));
     }
 
+    // =============== analítica ===============
+    async getAnalysis(token, recordingId) {
+      const ctx = this._ctx(token); this._need(ctx, 'camaras.ver');
+      await this._own('recordings', recordingId, ctx);
+      return (await this.db.by('analysis', 'recordingId', recordingId)).find(a => a.org === ctx.org) || null;
+    }
+    async listAnalyses(token) { const ctx = this._ctx(token); this._need(ctx, 'camaras.ver'); return this.db.by('analysis', 'org', ctx.org); }
+    /** Resumen de conteos, ocupación y eventos para cámaras y ventana. */
+    async analyticsSummary(token, q) {
+      const ctx = this._ctx(token); this._need(ctx, 'indicadores.ver');
+      const cams = []; for (const id of (q.cameraIds || [])) cams.push(await this._own('cameras', id, ctx));
+      const recs = (await this.db.by('recordings', 'org', ctx.org)).filter(r => cams.some(c => c.id === r.cameraId));
+      const out = { lineas: [], ocupacion: [], eventos: {}, cobertura: [], entradas: 0, salidas: 0 };
+      for (const r of recs) {
+        const w = q.ventana ? V.windowForRecording(q.ventana, r) : { a: 0, b: r.duracion || 0 };
+        if (!w) continue;
+        const cam = cams.find(c => c.id === r.cameraId);
+        const an = (await this.db.by('analysis', 'recordingId', r.id)).find(a => a.org === ctx.org);
+        const sop = V.soporteClase('cruce_linea', r.motores || [], cam);
+        out.cobertura.push({ recordingId: r.id, cameraId: r.cameraId, camara: cam.codigo, a: w.a, b: w.b, recortada: w.recortada, analizado: !!an, soportaConteo: sop.ok, motivo: sop.motivo || null });
+        if (!an) continue;
+        for (const l of an.resultado.conteos) {
+          const cs = l.cruces.filter(c => c.t >= w.a && c.t <= w.b && (!q.clase || (l.clase || 'persona') === q.clase));
+          const e = cs.filter(c => c.sentido === 'entrada').length, s = cs.filter(c => c.sentido === 'salida').length;
+          out.lineas.push({ recordingId: r.id, camara: cam.codigo, cameraId: cam.id, tz: cam.tz, horaInicio: r.horaInicio, linea: l.linea, lineaId: l.lineaId, clase: l.clase, entradas: e, salidas: s, cruces: cs });
+          out.entradas += e; out.salidas += s;
+        }
+        for (const o of an.resultado.ocupacion) { const ser = o.serie.filter(x => x.t >= w.a && x.t <= w.b); out.ocupacion.push({ camara: cam.codigo, zona: o.zona, max: ser.reduce((m, x) => Math.max(m, x.n), 0) }); }
+        const fs = (await this.db.by('findings', 'recordingId', r.id)).filter(f => f.org === ctx.org && f.categoria === 'analitica' && f.fin >= w.a && f.inicio <= w.b);
+        fs.forEach(f => { out.eventos[f.clase] = (out.eventos[f.clase] || 0) + 1; });
+      }
+      return out;
+    }
+
     // =============== indicadores ===============
     async metrics(token) {
       const ctx = this._ctx(token); this._need(ctx, 'indicadores.ver');
@@ -679,6 +738,23 @@
   V.Api = Api;
 
   /** Traduce una ventana de consulta a posiciones (s) de una grabación. Devuelve null si no se solapa. */
+  /** ¿Puede el análisis realizado sobre una grabación responder por esta clase? Devuelve {ok, motivo}. */
+  V.soporteClase = function (c, motores, cam) {
+    const coco = motores.some(m => m.startsWith('coco'));
+    if (c === 'movimiento') return motores.includes('movimiento-v1') ? { ok: true } : { ok: false, motivo: 'sin detección de movimiento' };
+    const T = V.analitica && V.analitica.TIPOS[c];
+    if (T) {
+      if (!motores.includes('analitica-v1')) return { ok: false, motivo: 'la grabación no se procesó con el motor de analítica' };
+      if (T.ia && !coco) return { ok: false, motivo: '«' + T.nombre + '» requiere el detector IA (personas/vehículos)' };
+      const a = cam && cam.analitica;
+      if (T.cfg === 'linea' && !(a && a.lineas.length)) return { ok: false, motivo: 'la cámara no tiene líneas de conteo configuradas' };
+      if (T.cfg === 'puerta' && !(a && a.puertas.length)) return { ok: false, motivo: 'la cámara no tiene puertas configuradas' };
+      if (T.cfg && T.cfg.startsWith('zona:') && !(a && a.zonas.some(z => z.uso === T.cfg.slice(5)))) return { ok: false, motivo: 'la cámara no tiene zona de tipo «' + T.cfg.slice(5).replace('_', ' ') + '»' };
+      return { ok: true };
+    }
+    return coco ? { ok: true } : { ok: false, motivo: 'sin análisis IA de objetos' };
+  };
+
   V.windowForRecording = function (w, r) {
     if (!w || r.duracion == null) return null;
     const dur = r.duracion;

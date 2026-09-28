@@ -207,6 +207,35 @@
         assert(!JSON.stringify(r).includes(S.camA.id), 'no se filtran identificadores de otra organización');
         return 'intención: ' + p.intent;
       });
+      await caso('Analítica: conteo por línea, ingreso en grupo, intrusión, merodeo, mal estacionado, puerta y manipulación (motor determinista)', async () => {
+        const AN = V.analitica; const cfg = AN.configDemo();
+        const m = new AN.Motor({ analitica: cfg, mascaras: [] });
+        const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; const g = cv.getContext('2d');
+        const pinta = (puerta, negro) => { g.fillStyle = negro ? '#050505' : '#60666a'; g.fillRect(0, 0, 320, 180); if (!negro) { g.fillStyle = puerta ? '#161618' : '#5a4636'; g.fillRect(236, 20, 64, 32); g.strokeStyle = '#ddd'; for (let x = 20; x < 320; x += 55) { g.beginPath(); g.moveTo(x, 75); g.lineTo(x + 15, 180); g.stroke(); } } };
+        const P = (x, y, w, h) => ({ clase: 'person', score: 0.9, bbox: { x, y, w, h } }), M = (x, y) => ({ clase: 'motorcycle', score: 0.9, bbox: { x, y, w: 0.3, h: 0.35 } });
+        for (let t = 0; t <= 140; t++) {
+          const d = [];
+          if (t >= 5 && t <= 20) d.push(P(-0.2 + (t - 5) * 0.08, 0.5, 0.2, 0.44));                  // A entra (izq→der)
+          if (t >= 25 && t <= 60) d.push(P(Math.min(0.72, -0.2 + (t - 25) * 0.1), 0.35, 0.18, 0.4)); // B entra y merodea en la zona restringida
+          if (t >= 65 && t <= 80) d.push(P(1.0 - (t - 65) * 0.08, 0.5, 0.2, 0.44));                 // A sale (der→izq)
+          if (t >= 85 && t <= 97) { d.push(P(-0.05 + (t - 85) * 0.1, 0.52, 0.16, 0.44)); d.push(P(-0.22 + (t - 85) * 0.1, 0.53, 0.16, 0.44)); } // dos juntos
+          if (t >= 100 && t <= 138) d.push(M(0.08, 0.64));                                          // moto en zona de no estacionar 38 s
+          pinta(t >= 100 && t <= 125, t >= 136);
+          m.frame({ t, frameId: 'f' + t, canvas: cv, dets: d });
+        }
+        const r = m.finish(); const ev = k => r.eventos.filter(e => e.tipo === k);
+        const c = r.conteos[0];
+        assert(c.entradas === 4 && c.salidas === 1, 'conteo 4 entradas / 1 salida (obtenido ' + c.entradas + '/' + c.salidas + ')');
+        assert(ev('ingreso_grupal').length === 1, 'un ingreso en grupo');
+        assert(ev('intrusion').length >= 1 && ev('merodeo').length === 1, 'intrusión y merodeo');
+        assert(ev('mal_parqueado').length === 1 && ev('mal_parqueado')[0].detalle.duracionS >= 30, 'vehículo mal estacionado ≥ 30 s');
+        assert(ev('puerta_abierta').length === 1 && Math.abs(ev('puerta_abierta')[0].inicio - 100) <= 1, 'puerta abierta desde t=100');
+        assert(ev('manipulacion').length === 1 && ev('manipulacion')[0].detalle.tipo.startsWith('cubierta'), 'cámara cubierta');
+        assert(r.ocupacion[0].max >= 2 && ev('aglomeracion').length >= 1, 'ocupación máxima 2 y aglomeración (umbral 2)');
+        const a = AN.nombreColor(230, 110, 30), b2 = AN.nombreColor(20, 30, 70), w = AN.nombreColor(245, 245, 245);
+        assert(a === 'naranja' && b2 === 'azul' && w === 'blanco', 'nombres de color');
+        return Object.entries(r.eventos.reduce((o, e) => (o[e.tipo] = (o[e.tipo] || 0) + 1, o), {})).map(([k, v]) => k + '=' + v).join(', ');
+      });
       if (opts.ia) await caso('Motor IA local: detecta persona real en la ventana correcta', async () => {
         await V.ia.cargar();
         await api.requeueAnalysis(S.tA, S.rec.id, { ia: true }); await indexar();

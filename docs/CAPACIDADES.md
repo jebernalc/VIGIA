@@ -28,6 +28,14 @@ Estados: **Implementado y verificado** (prueba automática) · **Implementado, v
 | Auditoría encadenada por hash y detección de alteraciones | Implementado y verificado |  |
 | Retención configurable y protección de evidencia en expedientes | Implementado, verificación parcial | Borrado manual respeta protección; borrado programado: fase posterior. |
 | Nube Supabase: cuentas, organizaciones con RLS y sincronización de metadatos/custodia | Implementado, verificación parcial | Esquema y RLS verificados con SQL; sincronización probada con cliente simulado y validación del esquema. Los videos no se suben. |
+| Analítica: conteo de entradas/salidas por línea e ingreso en grupo | Implementado y verificado | Video de casos: 4/1 esperados = 4/1 obtenidos; prueba unitaria del motor. |
+| Analítica: intrusión, merodeo, aglomeración y ocupación por zona | Implementado y verificado | Verificado con IA real en el video de casos y en prueba unitaria. |
+| Analítica: vehículo mal estacionado | Implementado y verificado | Moto en zona de no estacionar 45 s → 1 evento. |
+| Analítica: puerta abierta (sin IA) | Implementado y verificado | 71% de cambio con la puerta abierta frente a 14% con una persona delante. |
+| Analítica: objeto abandonado y manipulación de cámara (sin IA) | Implementado y verificado | Sin falsos positivos por vehículo estacionado, puerta, humo ni persona quieta en el video de casos. |
+| Analítica: búsqueda por color de prenda | Implementado, verificación parcial | Funciona en el video de casos (retratos); falta validar con cuerpos completos en cámaras reales. |
+| Analítica: posible humo | Implementado, verificación parcial | EXPERIMENTAL y advertido en cada respuesta; no reemplaza detectores certificados. |
+| Analítica en vivo con reglas y alertas (puerta, merodeo, intrusión, etc.) | Implementado, verificación parcial | Motor en cada cuadro en vivo; alertas por regla. Probado con emulación en la prueba de interfaz. |
 | Conexión RTSP | Fase posterior | Un navegador no abre RTSP: requiere agente de borde (ARCHITECTURE.md). |
 | Servidor multiusuario (FastAPI + PostgreSQL + cola distribuida) | Fase posterior | Diseñado en ARCHITECTURE.md / API.md; esta entrega es la edición local. |
 | Búsqueda semántica con embeddings visuales | Fase posterior | No implementada: no se ofrece en la interfaz. |

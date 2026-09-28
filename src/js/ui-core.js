@@ -168,7 +168,7 @@
   A.logout = async function () { V.live.stopAll(); if (A.views.chat.reset) A.views.chat.reset(); A.seleccion = { cameraIds: [], ventana: { modo: 'ultimos', segundos: 300, texto: 'últimos 5 min' } }; A.ctxTab = 'reproductor'; if (A.views.expedientes) A.views.expedientes.sel = null; if (A.views.hallazgos) A.views.hallazgos.f = { estado: '', cameraId: '', clase: '' }; await A.api.logout(A.token); A.token = null; A.session = null; A.urlCache.clear(); A.chatId = null; A.renderLogin(); };
 
   // ---------- shell ----------
-  const NAV = [['ops', 'Centro de operaciones', 'ops'], ['chat', 'Chat', 'chat'], ['hallazgos', 'Hallazgos', 'find'], ['expedientes', 'Expedientes', 'case'], ['indicadores', 'Indicadores', 'kpi'], ['admin', 'Administración', 'admin']];
+  const NAV = [['ops', 'Centro de operaciones', 'ops'], ['chat', 'Chat', 'chat'], ['analitica', 'Analítica y casos de uso', 'kpi'], ['hallazgos', 'Hallazgos', 'find'], ['expedientes', 'Expedientes', 'case'], ['indicadores', 'Indicadores', 'kpi'], ['admin', 'Administración', 'admin']];
   A.views = {};
   A.start = function () {
     document.body.innerHTML = `<div class="shell"><header class="top" id="top"></header>
@@ -211,7 +211,7 @@
   };
 
   // ---------- helpers de presentación ----------
-  A.claseColor = c => { for (const [g, arr] of Object.entries(V.GRUPOS_CLASE)) if (arr.includes(c)) return 'var(--c-' + g + ')'; return 'var(--c-otro)'; };
+  A.claseColor = c => { if (V.analitica && V.analitica.esEvento(c)) return c === 'humo' || c === 'manipulacion' || c === 'intrusion' ? 'var(--bad)' : 'var(--c-evento)'; for (const [g, arr] of Object.entries(V.GRUPOS_CLASE)) if (arr.includes(c)) return 'var(--c-' + g + ')'; return 'var(--c-otro)'; };
   A.estadoBadge = e => ({ sugerido: '<span class="badge info">sugerido por motor</span>', revisado: '<span class="badge acc">revisado</span>', descartado: '<span class="badge">descartado</span>', confirmado: '<span class="badge bad">incidente confirmado</span>' }[e] || '<span class="badge">' + esc(e) + '</span>');
   A.tiempo = function (rec, t, tz) {
     if (rec && rec.horaInicio != null) return esc(V.fmtDateTime(rec.horaInicio + t * 1000, tz || rec.tz)) + ' <span class="muted">· pos. ' + V.fmtDur(t) + '</span>';

@@ -70,7 +70,7 @@
     clearInterval(opsTimer);
     const can = p => A.api.can(A.token, p);
     m.innerHTML = `<div class="view"><div class="row" style="margin-bottom:14px"><h1 class="h1 grow">Centro de operaciones</h1>
-      ${can('grabaciones.cargar') ? `<button class="btn" id="odemo">${I.play} Cargar video de demostración</button><button class="btn" id="oimp">${I.up} Importar video</button>` : ''}
+      ${can('grabaciones.cargar') ? `<button class="btn" id="odemo2">${I.kpi} Demo de casos de uso</button><button class="btn" id="odemo">${I.play} Cargar video de demostración</button><button class="btn" id="oimp">${I.up} Importar video</button>` : ''}
       ${can('camaras.gestionar') ? `<button class="btn pri" id="onew">${I.plus} Nueva cámara</button>` : ''}</div>
       <div id="owall" class="wall"></div>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr));margin-top:16px">
@@ -81,6 +81,7 @@
     const b = id => V.$(id);
     if (b('#onew')) b('#onew').onclick = async () => { if (await A.cameraForm()) ops.refresh(); };
     if (b('#oimp')) b('#oimp').onclick = () => A.importDialog();
+    if (b('#odemo2')) b('#odemo2').onclick = () => A.cargarDemoCasos();
     if (b('#odemo')) b('#odemo').onclick = async () => {
       try {
         let cams = await A.api.listCameras(A.token);
@@ -295,7 +296,7 @@
   adm.camaras = async function (body) {
     const cams = await A.api.listCameras(A.token), grupos = await A.api.listGroups(A.token); const g = A.api.can(A.token, 'camaras.gestionar');
     body.innerHTML = `<div class="card"><div class="row"><h2 class="h2 grow">Cámaras</h2>${g ? `<button class="btn sm pri" id="acn">${I.plus} Nueva cámara</button>` : ''}</div>
-      <table class="table" style="margin-top:8px"><tr><th>#</th><th>Código / nombre</th><th>Tipo</th><th>Ubicación</th><th>Zona horaria</th><th>Zonas de exclusión</th><th></th></tr>${cams.map(c => `<tr><td>${c.numero}</td><td><b>${esc(c.codigo)}</b> ${esc(c.nombre)}</td><td>${esc(c.tipo)}${c.rtspUrl ? '<div class="tiny mono">' + esc(c.rtspUrl) + '</div>' : ''}</td><td class="small">${esc([c.sede, c.zona, c.ubicacion].filter(Boolean).join(' · '))}</td><td>${esc(c.tz)}</td><td>${(c.mascaras || []).length}</td><td>${g ? `<button class="btn xs" data-e="${c.id}">editar</button> <button class="btn xs" data-mk="${c.id}">zonas de exclusión</button>` : ''}</td></tr>`).join('')}</table></div>
+      <table class="table" style="margin-top:8px"><tr><th>#</th><th>Código / nombre</th><th>Tipo</th><th>Ubicación</th><th>Zona horaria</th><th>Zonas de exclusión</th><th></th></tr>${cams.map(c => `<tr><td>${c.numero}</td><td><b>${esc(c.codigo)}</b> ${esc(c.nombre)}</td><td>${esc(c.tipo)}${c.rtspUrl ? '<div class="tiny mono">' + esc(c.rtspUrl) + '</div>' : ''}</td><td class="small">${esc([c.sede, c.zona, c.ubicacion].filter(Boolean).join(' · '))}</td><td>${esc(c.tz)}</td><td>${(c.mascaras || []).length}</td><td>${g ? `<button class="btn xs" data-e="${c.id}">editar</button> <button class="btn xs" data-mk="${c.id}">zonas de exclusión</button> <button class="btn xs" data-an="${c.id}">analítica</button>` : ''}</td></tr>`).join('')}</table></div>
       <div class="card" style="margin-top:12px"><div class="row"><h2 class="h2 grow">Grupos de cámaras</h2>${g ? `<button class="btn sm" id="agn">${I.plus} Nuevo grupo</button>` : ''}</div>
       <table class="table" style="margin-top:8px"><tr><th>Grupo</th><th>Cámaras</th></tr>${grupos.map(x => `<tr><td>${esc(x.nombre)}</td><td>${x.cameraIds.map(id => { const c = cams.find(k => k.id === id); return c ? esc(c.codigo) : ''; }).join(', ')}</td></tr>`).join('') || '<tr><td colspan=2 class="muted">Sin grupos</td></tr>'}</table></div>`;
     if (V.$('#acn')) V.$('#acn').onclick = async () => { if (await A.cameraForm()) adm.render(V.$('#main'), 'camaras'); };
@@ -307,6 +308,7 @@
       const ed = e.target.closest('[data-e]'), mk = e.target.closest('[data-mk]');
       if (ed) { const c = cams.find(x => x.id === ed.dataset.e); if (await A.cameraForm(c)) adm.render(V.$('#main'), 'camaras'); }
       if (mk) adm.maskEditor(cams.find(x => x.id === mk.dataset.mk));
+      const an = e.target.closest('[data-an]'); if (an && await A.analyticsEditor(cams.find(x => x.id === an.dataset.an))) adm.render(V.$('#main'), 'camaras');
     };
   };
   adm.maskEditor = async function (cam) {

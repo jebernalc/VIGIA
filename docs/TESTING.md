@@ -1,6 +1,6 @@
 # VIGÍA · Pruebas
 
-Todas las pruebas se ejecutaron el 26/09/2026 sobre el código entregado. Resultados completos en `codigo-fuente/tests/resultado_*.txt` y capturas en `codigo-fuente/tests/capturas/`.
+Todas las pruebas se ejecutaron el 28/09/2026 sobre el código entregado. Resultados completos en `codigo-fuente/tests/resultado_*.txt` y capturas en `codigo-fuente/tests/capturas/`.
 
 ## Comandos
 
@@ -13,6 +13,8 @@ node tests/node_mp4cut.test.cjs      # corte MP4 sin recodificar, validado con f
 node tests/run_suite.mjs [--ia]      # suite interna en Chromium sin interfaz (file://)
 node tests/e2e.mjs                   # recorrido completo a través de la interfaz
 node tests/webcam.mjs                # adaptador de cámara web con dispositivo simulado
+node tests/casos.mjs [--ia]          # casos de uso sobre el video con guion conocido (lista de eventos)
+node tests/e2e_casos.mjs             # casos de uso con IA real a través de la interfaz
 node tests/cloud.mjs                 # sincronización con Supabase (cliente simulado, sin red)
 ```
 
@@ -22,10 +24,11 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 
 | Batería | Resultado | Duración |
 |---|---|---|
-| Intérprete de prompts (Node) | **21/21** correctas | < 1 s |
+| Intérprete de prompts (Node) | **30/30** correctas (incluye conteo, eventos y colores) | < 1 s |
 | Corte MP4 (Node + ffprobe) | **14/14** (H.264/AAC y VP9/Opus: duración, 2 pistas, decodificación sin errores, primer fotograma idéntico al original) | 2 s |
-| Suite interna en navegador | **16/16** correctas (incluida IA) | 213 s (IA en WebGL por software) |
-| Recorrido por interfaz (e2e) | **21/21** comprobaciones | ≈ 2 min |
+| Suite interna en navegador | **16/16** correctas sin IA (incluye prueba unitaria del motor de analítica); **17/17** con `--ia` | 8 s / ≈ 4 min |
+| **Casos de uso con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **14/14**: conteo 4/1, mal estacionado, color, puerta, humo, abandono, manipulación, merodeo+intrusión, ingreso en grupo, aglomeración, editor | ≈ 6 min |
+| Recorrido por interfaz (e2e) | **22/22** comprobaciones | ≈ 2 min |
 | Nube Supabase (cliente simulado + SQL real) | 8/8 sincronización · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
 | Cámara web simulada | primer cuadro 1,19 s · edad 0,6 s · búfer 12 s · clip de contexto 705 KB | 13 s |
 

@@ -11,7 +11,14 @@ Plataforma de monitoreo y análisis de video con chat en español, preservación
 | Instalación | Ninguna. No requiere Python, Docker ni permisos de administrador |
 | Motor IA (opcional) | Carpeta `motor-ia/` junto a `VIGIA.html` (≈25 MB, incluida) |
 
-## Inicio (comando exacto)
+## Acceso de prueba en línea
+
+**https://jebernalc2036-ai.github.io/vigia/** (GitHub Pages).
+
+- Los videos y el análisis se procesan y guardan **en su navegador**.
+- **Nube (Supabase)**: en Administración → *Nube (Supabase)* puede iniciar sesión y sincronizar metadatos y cadena de custodia (cámaras, grabaciones con SHA-256, hallazgos, clips con hash, expedientes, evidencias, auditoría) con aislamiento por organización (Row Level Security). **Los videos no se suben.** Detalles en `supabase/README.md`.
+
+## Inicio local (comando exacto)
 
 1. Descomprima `VIGIA.zip` en una carpeta, por ejemplo `Documentos\VIGIA`.
 2. Doble clic en **`VIGIA.html`** (o arrástrelo a Chrome/Edge). URL local: `file:///…/VIGIA/VIGIA.html`.
@@ -39,6 +46,10 @@ python -m http.server 8080      # luego abra http://localhost:8080/VIGIA.html
 | consultor@demo | Norte (investigador) **y** Sur (operador): elige organización al entrar |
 
 Las contraseñas se pueden fijar para demostraciones copiando `vigia.config.example.js` como `vigia.config.js` (equivalente a `.env.example`). No use contraseñas de producción.
+
+## Casos de uso de analítica
+
+Menú **Analítica y casos de uso** → «Cargar demostración de casos de uso». La demostración incluye 12 casos activos: conteo de entradas y salidas, ingreso en grupo, intrusión, merodeo, aglomeración, vehículo mal estacionado, puerta abierta, objeto abandonado, manipulación de cámara, color de prenda, mapa de calor y humo (experimental). Todos se verificaron con IA real sobre un video con guion conocido. Detalle en `docs/CASOS_DE_USO.md`; guion para la alta dirección en `docs/ESTADO_PRESENTACION.md`.
 
 ## Recorrido en 3 minutos
 
@@ -80,16 +91,21 @@ El video de demostración se generó con `codigo-fuente/tools/gen_muestra.py` (e
 ## Estructura
 
 ```
-VIGIA/
-├── VIGIA.html                 ← aplicación completa (un solo archivo, 0,9 MB)
-├── motor-ia/                  ← TensorFlow.js + COCO-SSD + pesos (opcional, Apache-2.0)
-├── muestras/                  ← video de demostración (.mp4 y .js para file://)
-├── vigia.config.example.js    ← configuración opcional (sin secretos)
-├── README.md · ARCHITECTURE.md · API.md · TESTING.md · CAPACIDADES.md · PROMPT_MEJORADO.md
-└── codigo-fuente/             ← src/, tests/, tools/, package.json (para desarrolladores)
+vigia/
+├── app/                       ← lo que se publica y se abre en el navegador
+│   ├── VIGIA.html             ← aplicación completa (un solo archivo, 0,9 MB)
+│   ├── motor-ia/              ← TensorFlow.js + COCO-SSD + pesos (opcional, Apache-2.0)
+│   ├── muestras/              ← video de demostración
+│   └── vigia.config.js        ← configuración (sin secretos)
+├── src/                       ← código fuente (JS/CSS)
+├── tests/                     ← pruebas (Node, navegador, e2e) y capturas
+├── tools/                     ← compilación y generador de video sintético
+├── docs/                      ← ARCHITECTURE · API · TESTING · CAPACIDADES · PROMPT_MEJORADO
+├── supabase/migrations/       ← esquema de la nube con RLS
+└── .github/workflows/pages.yml ← publicación automática en GitHub Pages
 ```
 
-Compilar desde el código fuente: `cd codigo-fuente && npm install && npm run build` (genera `app/VIGIA.html`). Pruebas: `npm test`.
+Compilar: `npm install && npm run build` (regenera `app/VIGIA.html`). Pruebas: `npm test`.
 
 ## Limitaciones reales
 

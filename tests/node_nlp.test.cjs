@@ -29,4 +29,14 @@ p=P('genera el informe del caso EXP-2026-0002'); ok(p.intent==='informe'&&p.caso
 p=P('añade este hallazgo al caso'); ok(p.intent==='agregar_caso','añadir al caso',p);
 p=P('muéstrame imágenes de la cámara 1 en los últimos treinta segundos'); ok(p.ventana&&p.ventana.segundos===30,'número en palabras (treinta segundos)',p);
 p=P('fotogramas de la cam 2 de la última media hora'); ok(p.intent==='fotogramas'&&p.camaras[0]==='c2','cam 2 media hora',p);
+const cams2=cams.concat([{id:'c4',numero:4,nombre:'Salón principal (demo analítica)',codigo:'CAM-04'}]);
+p=interpretar('¿cuántas personas han ingresado al salón hoy?',{camaras:cams2}); ok(p.intent==='conteo'&&p.camaras[0]==='c4'&&p.ventana.modo==='hoy'&&p.conteo.sentido==='entrada','conteo de ingresos al salón hoy (cámara por nombre)',p);
+p=interpretar('muéstrame los vehículos mal parqueados en la cámara 2',{camaras:cams}); ok(p.intent==='buscar'&&p.clases.join()==='mal_parqueado','vehículos mal parqueados',p);
+p=interpretar('busca una persona con camisa roja y pantalón negro en la cámara 2',{camaras:cams}); ok(p.atributos.superior==='rojo'&&p.atributos.inferior==='negro'&&p.clases[0]==='persona','persona con camisa roja y pantalón negro',p);
+p=interpretar('¿la puerta de la bodega quedó abierta en la cámara 3?',{camaras:cams}); ok(p.clases[0]==='puerta_abierta','puerta abierta',p);
+p=interpretar('¿hubo humo en alguna cámara?',{camaras:cams}); ok(p.clases[0]==='humo'&&p.camaras.length===3,'humo en todas las cámaras',p);
+p=interpretar('¿alguien tapó la cámara 2?',{camaras:cams}); ok(p.clases[0]==='manipulacion','manipulación de cámara',p);
+p=interpretar('objetos abandonados en la cámara 1',{camaras:cams}); ok(p.clases[0]==='objeto_abandonado','objeto abandonado',p);
+p=interpretar('avísame si la puerta queda abierta en la cámara 2 durante 60 minutos',{camaras:cams}); ok(p.intent==='regla'&&p.regla.clase==='puerta_abierta'&&p.regla.duracionMin===60,'regla de puerta abierta',p);
+p=interpretar('¿cuántos vehículos salieron por la cámara 2?',{camaras:cams}); ok(p.intent==='conteo'&&p.conteo.clase==='vehiculo'&&p.conteo.sentido==='salida','conteo de salidas de vehículos',p);
 process.exit(fails?1:0);
