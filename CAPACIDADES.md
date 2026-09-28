@@ -9,12 +9,12 @@
 | Consultas de fotogramas por intervalo y chat | Implementado y probado | Parser determinista; tiempos relativos al archivo. |
 | Clips e informes preliminares | Implementado y probado | PDF mediante función de imprimir del navegador. |
 | Búsqueda de personas y vehículos | Diseñada para fase posterior | No se genera ningún hallazgo sin detector. |
-| Conexión RTSP y alertas en vivo | Diseñada para fase posterior | La interfaz identifica archivos históricos. |
+| Capturas RTSP bajo demanda | Implementada; pendiente de prueba con cámara real | Disponible solo con fuente configurada en el servidor. No hay flujo continuo ni alertas automáticas. |
+| Alertas en vivo | Diseñadas para fase posterior | No existe detector de incidentes. |
 | 5.000 cámaras y despliegue de producción | Diseñado para fase posterior | Sin pruebas de escala ni alta disponibilidad. |
+| Rondas de cámaras | Implementada y probada por API | Recorrido automático y manual; planes persistentes por organización. Vista histórica por defecto, captura RTSP bajo demanda solo si la fuente está configurada en el servidor. |
+| Búsqueda de cambio visual | Implementada y probada con MP4 sintético | Compara fotogramas muestreados; no identifica objetos ni incidentes. |
 
 La calidad visual y la eficiencia frente a productos comerciales requieren pruebas de usabilidad, carga y precisión comparables. Esta versión no hace tal afirmación.
 
 La modalidad nube limita cada MP4 a 50 MB y cinco minutos. Su procesamiento ocurre en memoria en el servicio web, por lo que requiere una cola durable para continuidad operativa.
-
-| Rondas de cámaras | Implementada y probada por API | Recorrido automático y manual; planes persistentes por organización. Vista histórica por defecto, captura RTSP bajo demanda solo si la fuente está configurada en el servidor. |
-| Búsqueda de cambio visual | Implementada y probada con MP4 sintético | Compara fotogramas muestreados; no identifica objetos ni incidentes. |
