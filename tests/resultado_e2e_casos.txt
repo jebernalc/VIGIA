@@ -13,5 +13,20 @@ OK  merodeo + intrusión
 OK  ingreso en grupo (tailgating)
 OK  aglomeración (umbral 2)
 OK  editor muestra 3 zonas, 1 línea y 1 puerta
+OK  chat: sinopsis de video
+    6 objeto(s) · 00:02:49 de actividad condensados en 00:01:33 (×1.8).
+OK  sinopsis generada con compresión del tiempo
+OK  imagen estroboscópica guardada como derivado con hash
+OK  las personas seguidas tienen firma de apariencia (botón «parecidos»)
+    2 de 4 persona(s) seguidas superan el umbral. Histograma HSV de torso y piernas (sin piel) · coeficiente de Bhattacharyy
+OK  búsqueda por apariencia en todas las cámaras
+OK  expediente abierto desde el chat
+OK  clip del hallazgo
+OK  versión del clip con personas pixeladas (derivado con hash propio)
+    Abiertas 0 0 sin reconocer | SLA vencido 0 nuevas fuera de plazo | MTTA 19 s tiempo medio hasta reconocer | MTTR 21 s tiempo medio hasta cerrar | Cumplimiento SLA 100% reconocidas dentro del plazo | Falsas alarmas 0% de las cerradas
+OK  SLA cumplido y métricas de la central
+OK  cámara ubicada en el plano con su campo de visión
+    7 archivos verificados 0 errores
+OK  paquete ZIP íntegro: todos los SHA-256 de SHA256SUMS coinciden
 
 Casos de uso verificados por la interfaz.

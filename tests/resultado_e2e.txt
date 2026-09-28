@@ -22,4 +22,3 @@ OK  ni sus hallazgos
 OK  selección de organización al iniciar sesión
 
 Recorrido completo sin errores. Capturas en tests/capturas/
-exit 0
