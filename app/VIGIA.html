@@ -4285,6 +4285,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         <div id="lerr" class="small" style="color:var(--bad);min-height:18px">${esc(msg || '')}</div>
         <button class="btn pri" style="justify-content:center">Ingresar</button>
       </form>
+      ${hasData ? '<button type="button" class="btn sm" id="regen" style="width:100%;justify-content:center;margin-top:12px">¿No tiene las contraseñas? Generar usuarios nuevos</button><div class="tiny muted" style="margin-top:4px">Las contraseñas no se pueden recuperar (sólo se guarda su hash). Generar usuarios nuevos borra los datos de VIGÍA en este navegador y muestra credenciales nuevas.</div>' : ''}
       <details style="margin-top:18px" class="small muted"><summary>Opciones</summary>
         <p>Los datos (videos, índices, expedientes) se guardan sólo en este navegador (IndexedDB). No se envía nada a Internet.</p>
         <button class="btn sm danger" id="reset">Borrar TODOS los datos locales de VIGÍA</button></details>
@@ -4307,6 +4308,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         A.renderLogin();
       } catch (e) { V.fail(e); A.renderLogin(); }
     };
+    if (q('#regen')) q('#regen').onclick = () => q('#reset').click();
     q('#reset').onclick = async () => {
       if (!await V.confirmar('Borrar datos locales', 'Se eliminarán organizaciones, usuarios, videos, índices, expedientes y auditoría de este navegador. No se puede deshacer.', 'Borrar todo')) return;
       V.live.stopAll(); await A.api.db.destroy(); location.reload();
