@@ -30,8 +30,52 @@
     const mems = chk(await C.cliente().from('vigia_miembros').select('org_id,rol').eq('user_id', C.user.id), 'Membresías');
     return orgs.map(o => Object.assign(o, { rol: (mems.find(m => m.org_id === o.id) || {}).rol }));
   };
+  // ---------- acceso y administración (roles, permisos y licencias) ----------
+  const sitio = () => location.protocol.startsWith('http') ? location.href.split('#')[0].split('?')[0] : undefined;
+  const rpc = async (fn, args, what) => chk(await C.cliente().rpc(fn, args || {}), what);
+  /** Mensajes de Supabase Auth en español claro. */
+  C.mensaje = function (e) {
+    const m = String((e && e.message) || e || '');
+    if (/Invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+    if (/Email not confirmed/i.test(m)) return 'Aún no has confirmado tu correo. Abre el mensaje de confirmación que te enviamos (revisa spam).';
+    if (/already registered|already been registered/i.test(m)) return 'Ese correo ya tiene cuenta. Usa la pestaña «Ingresar».';
+    if (/rate limit|too many|security purposes/i.test(m)) return 'Demasiados intentos seguidos. Espera unos minutos y vuelve a intentarlo.';
+    if (/at least|weak|password should/i.test(m)) return 'La contraseña es muy débil: usa al menos 8 caracteres.';
+    if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Sin conexión con el servicio de cuentas. Revisa tu Internet.';
+    return m.replace(/^[^:]{0,40}: /, '');
+  };
+  C.registrarCuenta = async (email, password, datos) => {
+    const d = chk(await C.cliente().auth.signUp({ email, password, options: { emailRedirectTo: sitio(), data: datos || {} } }), 'Registro');
+    // Supabase responde sin error cuando el correo ya existe (no revela cuentas): se detecta por la lista de identidades vacía
+    if (d.user && Array.isArray(d.user.identities) && d.user.identities.length === 0) throw new V.VigiaError('NUBE', 'Ese correo ya tiene cuenta. Usa la pestaña «Ingresar».');
+    C.user = d.session ? d.user : null; return { requiereConfirmacion: !d.session, user: d.user };
+  };
+  C.reenviarConfirmacion = async email => chk(await C.cliente().auth.resend({ type: 'signup', email, options: { emailRedirectTo: sitio() } }), 'Reenvío');
+  C.recuperarClave = async email => chk(await C.cliente().auth.resetPasswordForEmail(email, { redirectTo: sitio() }), 'Recuperación');
+  C.cambiarClave = async password => chk(await C.cliente().auth.updateUser({ password }), 'Cambio de contraseña');
+  C.registrarPropietario = (org, sede) => rpc('vigia_registrar_propietario', { p_org: org, p_sede: sede || null }, 'Registro de la organización');
+  /** Organizaciones, rol, permisos y licencia de la cuenta actual. */
+  C.acceso = async () => (await rpc('vigia_mi_acceso', {}, 'Acceso')) || [];
+  /** Motivo por el que una membresía no puede entrar, o null si la licencia está vigente. */
+  C.bloqueo = function (a) {
+    const hoy = new Date().toISOString().slice(0, 10);
+    if (!a.activo) return 'Tu licencia de usuario está suspendida. Habla con el administrador de ' + a.org_nombre + '.';
+    if (a.licencia_vence && a.licencia_vence < hoy) return 'Tu licencia de usuario venció el ' + a.licencia_vence + '. Habla con el administrador de ' + a.org_nombre + '.';
+    if (a.org_estado !== 'activa') return 'La licencia de ' + a.org_nombre + ' está suspendida.';
+    if (a.org_vence && a.org_vence < hoy) return 'La licencia de ' + a.org_nombre + ' venció el ' + a.org_vence + '.';
+    return null;
+  };
+  C.miembros = orgId => rpc('vigia_miembros_listar', { p_org: orgId }, 'Equipo');
+  C.miembroAgregar = (orgId, email, rol, nombre) => rpc('vigia_miembro_agregar', { p_org: orgId, p_email: email, p_rol: rol, p_nombre: nombre || null }, 'Agregar miembro');
+  C.miembroActualizar = (orgId, userId, c) => rpc('vigia_miembro_actualizar', { p_org: orgId, p_user: userId, p_rol: c.rol || null, p_activo: c.activo == null ? null : !!c.activo, p_vence: c.vence || null, p_sin_vencimiento: !!c.sinVencimiento, p_permisos: c.permisos || null, p_nombre: c.nombre || null }, 'Actualizar miembro');
+  C.miembroQuitar = (orgId, userId) => rpc('vigia_miembro_quitar', { p_org: orgId, p_user: userId }, 'Quitar miembro');
+  C.claveTemporal = (orgId, userId) => rpc('vigia_miembro_clave_temporal', { p_org: orgId, p_user: userId }, 'Clave temporal');
+  C.orgLicencia = (orgId, l) => rpc('vigia_org_licencia', { p_org: orgId, p_plan: l.plan, p_max_usuarios: +l.maxUsuarios, p_max_camaras: +l.maxCamaras, p_vence: l.vence || null, p_estado: l.estado }, 'Licencia');
+  C.orgsPlataforma = () => rpc('vigia_orgs_plataforma', {}, 'Organizaciones');
+  C.eventosAdmin = async orgId => chk(await C.cliente().from('vigia_admin_eventos').select('actor_email,accion,detalle,en').eq('org_id', orgId).order('en', { ascending: false }).limit(50), 'Eventos');
+
   C.crearOrganizacion = async nombre => chk(await C.cliente().rpc('vigia_crear_organizacion', { p_nombre: nombre }), 'Crear organización');
-  C.agregarMiembro = async (orgId, email, rol) => chk(await C.cliente().rpc('vigia_agregar_miembro', { p_org: orgId, p_email: email, p_rol: rol }), 'Agregar miembro');
+  C.agregarMiembro = (orgId, email, rol) => C.miembroAgregar(orgId, email, rol);
 
   const iso = ms => ms == null ? null : new Date(ms).toISOString();
   /** Construye las filas a sincronizar a partir de la API local (respeta permisos del usuario local). */

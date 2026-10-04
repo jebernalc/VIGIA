@@ -31,6 +31,7 @@ El video de prueba `tests/muestra_cam01_vp9.mp4` se usa en Chromium automatizado
 | **Casos de uso y funciones avanzadas con IA real por la interfaz** (`tests/e2e_casos.mjs`) | **24/24**: los 14 casos de uso + sinopsis (2:49 → 1:33), imagen estroboscópica, búsqueda por apariencia, escalado a la central, clip con privacidad, reconocimiento/SOP/cierre con SLA 100 %, plano del sitio y paquete ZIP con **todos los SHA-256 verificados con Python** | ≈ 8 min |
 | Recorrido por interfaz (e2e) | **22/22** comprobaciones | ≈ 2 min |
 | Nube Supabase (cliente simulado + SQL real) | 10/10 sincronización (incluye alarmas y plano) · filas validadas contra el esquema real (migración 0004) · RLS: 0 filas visibles entre organizaciones, inserción cruzada rechazada | 10 s |
+| Acceso y administración (`tests/acceso.mjs`, cliente simulado) | **18/18**: tres pestañas, registro de propietario y equipo, confirmación de correo, cupo de usuarios, cambio de rol, permisos individuales, suspensión de licencia, clave temporal con cambio obligatorio, límite de cámaras, aislamiento entre organizaciones | 20 s |
 | Cámara web simulada | primer cuadro 1,19 s · edad 0,6 s · búfer 12 s · clip de contexto 705 KB | 13 s |
 
 ### Suite interna (qué se comprueba)

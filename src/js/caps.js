@@ -40,6 +40,7 @@ window.V.CAPACIDADES = [
   ['Redacción de privacidad: clips e imágenes con personas pixeladas', 'p', 'Recorrido de interfaz genera el clip con hash propio; depende de las detecciones IA (muestreo 1 s, margen ±1 s).'],
   ['Paquete de evidencia ZIP con manifiesto, SHA256SUMS, custodia e informe', 'v', 'Recorrido de interfaz: todos los SHA-256 verificados con Python fuera del navegador.'],
   ['Reglas y zonas con horario (franjas que cruzan medianoche, días, zona horaria de la cámara)', 'v', 'Prueba «Horarios» y 2 pruebas del intérprete.'],
+  ['Acceso con cuenta (propietario / equipo) y administración de roles, permisos individuales y licencias', 'p', 'Interfaz verificada de punta a punta con un cliente simulado (18 comprobaciones). Las funciones SQL (migración 0005) deben estar aplicadas en Supabase.'],
   ['Conexión RTSP', 'f', 'Un navegador no abre RTSP: requiere agente de borde (ARCHITECTURE.md).'],
   ['Servidor multiusuario (FastAPI + PostgreSQL + cola distribuida)', 'f', 'Diseñado en ARCHITECTURE.md / API.md; esta entrega es la edición local.'],
   ['Búsqueda semántica con embeddings visuales', 'f', 'No implementada: no se ofrece en la interfaz.'],

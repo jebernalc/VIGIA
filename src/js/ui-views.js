@@ -285,7 +285,7 @@
 
   // ======================= ADMINISTRACIÓN =======================
   const adm = A.views.admin = {};
-  const ATABS = [['camaras', 'Cámaras y grupos'], ['usuarios', 'Usuarios y roles'], ['ia', 'Motor de visión'], ['retencion', 'Retención'], ['auditoria', 'Auditoría'], ['nube', 'Nube (Supabase)'], ['datos', 'Datos y almacenamiento'], ['pruebas', 'Pruebas automáticas'], ['capacidades', 'Capacidades']];
+  const ATABS = [['camaras', 'Cámaras y grupos'], ['usuarios', 'Usuarios, roles y licencias'], ['ia', 'Motor de visión'], ['retencion', 'Retención'], ['auditoria', 'Auditoría'], ['nube', 'Nube (Supabase)'], ['datos', 'Datos y almacenamiento'], ['pruebas', 'Pruebas automáticas'], ['capacidades', 'Capacidades']];
   adm.render = async function (m, tab) {
     adm.tab = tab || adm.tab || 'camaras';
     m.innerHTML = `<div class="view"><h1 class="h1" style="margin-bottom:10px">Administración</h1><div class="tabs" id="atabs" style="padding:0;margin-bottom:14px">${ATABS.filter(([k]) => k !== 'nube' || A.api.can(A.token, 'admin.politicas')).map(([k, l]) => `<button data-t="${k}" class="${adm.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="abody"></div></div>`;

@@ -17,7 +17,7 @@ const ask = async (t, wait) => {
 };
 try {
   await p.goto('file://' + path.resolve('app/VIGIA.html'));
-  await p.click('#boot'); await p.waitForSelector('.creds');
+  await p.click('details summary'); await p.click('#tlocal'); await p.click('#boot'); await p.waitForSelector('.creds');
   const creds = await p.$$eval('.creds tr', rows => rows.slice(1).map(r => Array.from(r.cells).map(c => c.textContent)));
   ok(creds.length === 8 && creds.every(c => c[2].length === 12), '8 credenciales aleatorias generadas');
   await shot('credenciales'); await p.click('text=Ya las guardé');

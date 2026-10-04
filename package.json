@@ -1,6 +1,6 @@
 {
   "name": "vigia",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "VIGÍA — plataforma local de monitoreo y análisis de video",
   "main": "index.js",
   "scripts": {

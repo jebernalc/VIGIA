@@ -51,6 +51,19 @@ Las contraseñas se pueden fijar para demostraciones copiando `vigia.config.exam
 
 Menú **Analítica y casos de uso** → «Cargar demostración de casos de uso». La demostración incluye 12 casos activos: conteo de entradas y salidas, ingreso en grupo, intrusión, merodeo, aglomeración, vehículo mal estacionado, puerta abierta, objeto abandonado, manipulación de cámara, color de prenda, mapa de calor y humo (experimental). Todos se verificaron con IA real sobre un video con guion conocido. Detalle en `docs/CASOS_DE_USO.md`; guion para la alta dirección en `docs/ESTADO_PRESENTACION.md`.
 
+## Acceso con cuenta y administración (v1.2)
+
+La pantalla de acceso tiene tres pestañas: **Ingresar**, **Registrar propietario** (crea la organización y queda como administrador) y **Soy del equipo** (crea la cuenta; el administrador la agrega con su correo y rol). Las cuentas son reales (Supabase Auth) y sirven en cualquier navegador.
+
+En **Administración → Usuarios, roles y licencias** el administrador controla, desde la misma aplicación:
+
+- **Roles** de cada persona (5 roles) y **permisos individuales** (conceder o denegar permisos concretos por encima del rol).
+- **Licencia de cada usuario**: activa o suspendida y fecha de vencimiento. Una licencia suspendida o vencida impide ingresar.
+- **Licencia de la organización**: plan, cupo de usuarios y de cámaras, vencimiento (los fija el administrador de la plataforma).
+- **Clave temporal** con cambio obligatorio, quitar miembros y **registro de cambios** de administración.
+
+Los videos y su análisis siguen guardados sólo en el navegador de cada equipo; en «Otras opciones» queda la demostración local sin cuenta.
+
 ## Funciones avanzadas (v1.1)
 
 - **Central de alarmas**: prioridad, SLA con cuenta regresiva, procedimiento (SOP), asignación, cierre con resolución y métricas MTTA/MTTR/SLA. Cualquier hallazgo se puede «escalar».

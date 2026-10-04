@@ -9,7 +9,7 @@ const shot = async name => { await p.waitForTimeout(500); await p.screenshot({ p
 const ask = async (t) => { const k = await p.locator('.msg.v .txt').count(); await p.fill('#ci', t); await p.press('#ci', 'Enter'); await p.waitForFunction(k => document.querySelectorAll('.msg.v .txt').length > k && !document.querySelector('.msg.v .spin'), k, { timeout: 90000 }); await p.waitForTimeout(900); return p.locator('.msg.v .txt').last().innerText(); };
 try {
   await p.goto('file://' + path.resolve('app/VIGIA.html'));
-  await p.click('#boot'); await p.waitForSelector('.creds');
+  await p.click('details summary'); await p.click('#tlocal'); await p.click('#boot'); await p.waitForSelector('.creds');
   const creds = await p.$$eval('.creds tr', rows => rows.slice(1).map(r => Array.from(r.cells).map(c => c.textContent)));
   await p.click('text=Ya las guardé'); await p.fill('#le', 'admin@norte.demo'); await p.fill('#lp', creds.find(c => c[0] === 'admin@norte.demo')[2]); await p.click('#lf button.pri'); await p.waitForSelector('.shell');
   await p.click('[data-nav=analitica]'); await p.waitForSelector('#vdemo');

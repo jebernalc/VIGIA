@@ -184,3 +184,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--acc);outline:none}
 /* sinopsis */
 canvas.sinopsis{width:100%;height:auto;border-radius:8px;background:#05070a;cursor:pointer;display:block}
 @media (max-width:1100px){ .algrid,.plgrid{grid-template-columns:1fr} .alq{max-height:none} }
+
+/* acceso con cuenta */
+.login-card.acceso{width:min(560px,100%)}
+.pwbox{display:flex;gap:6px;align-items:stretch}.pwbox input{flex:1;min-width:0}
+.linkbtn{background:none;border:0;padding:0;color:var(--acc);text-decoration:underline;cursor:pointer;font:inherit}
+[hidden]{display:none!important}
+:root{color-scheme:dark} :root[data-theme="light"]{color-scheme:light}

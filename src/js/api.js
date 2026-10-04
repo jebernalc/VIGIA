@@ -107,21 +107,51 @@
       if (Date.now() > s.exp) { this.sessions.delete(token); throw E('SESION_EXPIRADA', 'La sesión expiró.'); }
       return s;
     }
-    _need(ctx, perm) { if (!V.can(ctx.rol, perm)) throw E('PROHIBIDO', 'Su rol (' + ROLES[ctx.rol] + ') no tiene el permiso «' + perm + '».'); }
+    /** Permiso efectivo: el rol, más las excepciones individuales que fijó el administrador (conceder o denegar). */
+    _puede(ctx, perm) {
+      const ex = ctx.permisos && Object.prototype.hasOwnProperty.call(ctx.permisos, perm) && PERMS[perm] ? ctx.permisos[perm] : null;
+      return ex === true ? true : ex === false ? false : V.can(ctx.rol, perm);
+    }
+    _need(ctx, perm) { if (!this._puede(ctx, perm)) throw E('PROHIBIDO', 'Su rol (' + ROLES[ctx.rol] + ') no tiene el permiso «' + perm + '».'); }
     async _own(store, id, ctx) {
       if (typeof id !== 'string' || id.length > 80) throw E('VALIDACION', 'Identificador inválido');
       const r = await this.db.get(store, id);
       if (!r || r.org !== ctx.org) throw E('NO_ENCONTRADO', 'Recurso no encontrado en su organización.');
       return r;
     }
-    session(token) { const s = this._ctx(token); return { userId: s.userId, email: s.email, nombre: s.nombre, org: s.org, orgNombre: s.orgNombre, rol: s.rol, rolNombre: ROLES[s.rol], exp: s.exp }; }
-    can(token, perm) { try { return V.can(this._ctx(token).rol, perm); } catch (_) { return false; } }
+    session(token) { const s = this._ctx(token); return { userId: s.userId, email: s.email, nombre: s.nombre, org: s.org, orgNombre: s.orgNombre, rol: s.rol, rolNombre: ROLES[s.rol], exp: s.exp, nube: s.nube || null, permisos: s.permisos || {} }; }
+    can(token, perm) { try { return this._puede(this._ctx(token), perm); } catch (_) { return false; } }
 
-    async hasData() { return (await this.db.all('orgs')).length > 0; }
+    async hasData() { return (await this.db.all('orgs')).some(o => !o.nube); }
+
+    /**
+     * Sesión a partir de una cuenta verificada en la nube (Supabase Auth). La identidad, el rol, los permisos
+     * individuales y la licencia vienen de la nube; los videos y el análisis siguen guardados en este navegador,
+     * en un espacio propio de la organización.
+     * acc: { userId, email, nombre, orgId, orgNombre, rol, permisos, licencia }
+     */
+    async loginNube(acc) {
+      if (!acc || !/^[0-9a-f-]{36}$/i.test(String(acc.orgId)) || !ROLES[acc.rol]) throw E('VALIDACION', 'Acceso de nube inválido');
+      const email = String(acc.email || '').trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw E('VALIDACION', 'Correo inválido');
+      const orgId = 'org_n_' + String(acc.orgId).toLowerCase();
+      const nombreOrg = String(acc.orgNombre || 'Organización').slice(0, 120);
+      const o = await this.db.get('orgs', orgId);
+      if (!o) await this.db.put('orgs', { id: orgId, nombre: nombreOrg, nube: String(acc.orgId), creadoEn: Date.now() });
+      else if (o.nombre !== nombreOrg) { o.nombre = nombreOrg; await this.db.put('orgs', o); }
+      const uid = 'usr_n_' + String(acc.userId).toLowerCase();
+      const nombre = String(acc.nombre || email.split('@')[0]).slice(0, 80);
+      await this.db.put('users', { id: uid, email, nombre, nube: true, activo: true, salt: '', iter: 0, hash: '', creadoEn: Date.now() }); // sin contraseña local: sólo entra por la nube
+      const permisos = {}; Object.entries(acc.permisos || {}).forEach(([k, v]) => { if (PERMS[k] && typeof v === 'boolean') permisos[k] = v; });
+      const token = V.randomSecret(32);
+      const s = { token, userId: uid, email, nombre, org: orgId, orgNombre: nombreOrg, rol: acc.rol, permisos, nube: { orgId: String(acc.orgId), userId: String(acc.userId), licencia: acc.licencia || null }, exp: Date.now() + CFG.sesionHoras * 3600e3 };
+      this.sessions.set(token, s);
+      await this._audit(s, 'sesion.iniciar', 'usuario', uid, { rol: acc.rol, origen: 'nube', permisosIndividuales: Object.keys(permisos).length });
+      return { token, session: this.session(token) };
+    }
 
     /** Crea organizaciones y usuarios de demostración con contraseñas aleatorias (o de vigia.config.js). */
     async bootstrapDemo() {
-      if (await this.hasData()) throw E('CONFLICTO', 'Ya existen organizaciones.');
+      if (await this.hasData()) throw E('CONFLICTO', 'Ya existen organizaciones de demostración.');
       const orgs = [
         { id: V.id('org'), nombre: 'Organización Demo Norte', slug: 'norte', pais: 'CO', region: 'sa-bogota', creadoEn: Date.now() },
         { id: V.id('org'), nombre: 'Organización Demo Sur', slug: 'sur', pais: 'CO', region: 'sa-bogota', creadoEn: Date.now() }
@@ -161,7 +191,7 @@
       const f = this.fails.get(email) || { n: 0, hasta: 0 };
       if (Date.now() < f.hasta) throw E('LIMITE', 'Demasiados intentos. Espere ' + Math.ceil((f.hasta - Date.now()) / 1000) + ' s.');
       const u = (await this.db.by('users', 'email', email))[0];
-      const ok = u && u.activo && ctEq(await pbkdf2(String(password || ''), u.salt, u.iter), u.hash);
+      const ok = u && u.activo && !u.nube && ctEq(await pbkdf2(String(password || ''), u.salt, u.iter), u.hash);
       if (!ok) {
         f.n++; if (f.n >= 5) { f.hasta = Date.now() + 60000; f.n = 0; } this.fails.set(email, f);
         throw E('CREDENCIALES', 'Correo o contraseña incorrectos.');
@@ -274,6 +304,7 @@
       const ctx = this._ctx(token); this._need(ctx, 'camaras.gestionar');
       const nombre = String(data.nombre || '').trim().slice(0, 80);
       if (!nombre) throw E('VALIDACION', 'La cámara requiere un nombre.');
+      if (!data.id && ctx.nube && ctx.nube.licencia && ctx.nube.licencia.maxCamaras) { const n = (await this.db.by('cameras', 'org', ctx.org)).length; if (n >= ctx.nube.licencia.maxCamaras) throw E('LICENCIA', 'La licencia de la organización permite ' + ctx.nube.licencia.maxCamaras + ' cámaras y ya están en uso. Solicite ampliar el plan.'); }
       const tz = data.tz || V.defaultTZ(); if (!V.validTZ(tz)) throw E('VALIDACION', 'Zona horaria inválida: ' + tz);
       const tipo = ['archivo', 'webcam', 'rtsp'].includes(data.tipo) ? data.tipo : 'archivo';
       let rtspUrl = '';
