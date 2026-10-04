@@ -196,6 +196,7 @@ canvas.sinopsis{width:100%;height:auto;border-radius:8px;background:#05070a;curs
 :root{color-scheme:dark} :root[data-theme="light"]{color-scheme:light}
 
 </style>
+<script>/* la vista previa en Claude no tiene salida a Internet: funciona con el entorno local */window.VIGIA_SIN_NUBE = true;</script>
 <noscript>VIGÍA requiere JavaScript.</noscript>
 <div style="display:grid;place-items:center;height:100vh;font:14px system-ui;color:#a9b4c0;background:#0c0f13" id="splash">Iniciando VIGÍA…</div>
 <script src="vigia.config.js" onerror="void 0"></script>
@@ -4104,7 +4105,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   'use strict';
   const V = window.V; const C = V.cloud = { client: null, user: null, orgId: null };
 
-  C.configurada = () => !!(V.CFG.supabase && V.CFG.supabase.url && V.CFG.supabase.publishableKey && window.supabase && window.supabase.createClient);
+  C.configurada = () => !window.VIGIA_SIN_NUBE && !!(V.CFG.supabase && V.CFG.supabase.url && V.CFG.supabase.publishableKey && window.supabase && window.supabase.createClient);
   C.cliente = function () {
     if (C.client) return C.client;
     if (!C.configurada()) throw new V.VigiaError('NO_CONFIGURADO', 'Supabase no está configurado en vigia.config.js');

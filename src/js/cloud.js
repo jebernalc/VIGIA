@@ -8,7 +8,7 @@
   'use strict';
   const V = window.V; const C = V.cloud = { client: null, user: null, orgId: null };
 
-  C.configurada = () => !!(V.CFG.supabase && V.CFG.supabase.url && V.CFG.supabase.publishableKey && window.supabase && window.supabase.createClient);
+  C.configurada = () => !window.VIGIA_SIN_NUBE && !!(V.CFG.supabase && V.CFG.supabase.url && V.CFG.supabase.publishableKey && window.supabase && window.supabase.createClient);
   C.cliente = function () {
     if (C.client) return C.client;
     if (!C.configurada()) throw new V.VigiaError('NO_CONFIGURADO', 'Supabase no está configurado en vigia.config.js');
