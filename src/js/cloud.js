@@ -37,6 +37,9 @@
   C.mensaje = function (e) {
     const m = String((e && e.message) || e || '');
     if (/Invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+    if (/Could not find the function|PGRST202/i.test(m)) return 'Esta acción aún no está activada en la base de datos: falta una aprobación pendiente en Supabase.';
+    if (/Invalid TOTP|invalid.*code|mfa.*verif/i.test(m)) return 'El código no es correcto o ya venció. Escribe el código actual de tu aplicación de autenticación.';
+    if (/AAL2|aal2|insufficient_aal/i.test(m)) return 'Esta acción requiere verificar tu doble factor: cierra sesión y vuelve a ingresar con el código.';
     if (/Email not confirmed/i.test(m)) return 'Aún no has confirmado tu correo. Abre el mensaje de confirmación que te enviamos (revisa spam).';
     if (/already registered|already been registered/i.test(m)) return 'Ese correo ya tiene cuenta. Usa la pestaña «Ingresar».';
     if (/rate limit|too many|security purposes/i.test(m)) return 'Demasiados intentos seguidos. Espera unos minutos y vuelve a intentarlo.';
@@ -73,6 +76,39 @@
   C.orgLicencia = (orgId, l) => rpc('vigia_org_licencia', { p_org: orgId, p_plan: l.plan, p_max_usuarios: +l.maxUsuarios, p_max_camaras: +l.maxCamaras, p_vence: l.vence || null, p_estado: l.estado }, 'Licencia');
   C.orgsPlataforma = () => rpc('vigia_orgs_plataforma', {}, 'Organizaciones');
   C.eventosAdmin = async orgId => chk(await C.cliente().from('vigia_admin_eventos').select('actor_email,accion,detalle,en').eq('org_id', orgId).order('en', { ascending: false }).limit(50), 'Eventos');
+
+  // ---------- doble factor (TOTP: Google Authenticator, Microsoft Authenticator, Authy…) ----------
+  C.mfa = {
+    /** { verificados: [factor], nivel, siguiente, pideCodigo } */
+    async estado() {
+      const m = C.cliente().auth.mfa;
+      const f = chk(await m.listFactors(), 'Doble factor'); const a = chk(await m.getAuthenticatorAssuranceLevel(), 'Doble factor');
+      const verificados = ((f && (f.totp || f.all)) || []).filter(x => x.status === 'verified' && (x.factor_type || 'totp') === 'totp');
+      return { verificados, pendientes: ((f && f.all) || []).filter(x => x.status !== 'verified'), nivel: a.currentLevel, siguiente: a.nextLevel, pideCodigo: a.nextLevel === 'aal2' && a.currentLevel !== 'aal2' };
+    },
+    async inscribir() {
+      const m = C.cliente().auth.mfa;
+      // un intento anterior sin terminar deja un factor sin verificar con el mismo nombre: se retira antes de crear otro
+      try { const st = await C.mfa.estado(); for (const x of st.pendientes) await m.unenroll({ factorId: x.id }); } catch (_) { }
+      const d = chk(await m.enroll({ factorType: 'totp', friendlyName: 'VIGÍA ' + new Date().toISOString().slice(0, 10) + ' ' + Math.random().toString(36).slice(2, 6), issuer: 'VIGÍA' }), 'Doble factor');
+      return { id: d.id, qr: d.totp.qr_code, secreto: d.totp.secret, uri: d.totp.uri };
+    },
+    verificar: async (factorId, codigo) => chk(await C.cliente().auth.mfa.challengeAndVerify({ factorId, code: String(codigo).replace(/\s+/g, '') }), 'Código'),
+    quitar: async factorId => chk(await C.cliente().auth.mfa.unenroll({ factorId }), 'Doble factor')
+  };
+  C.pedirAyuda = async email => chk(await C.cliente().rpc('vigia_solicitar_restablecimiento', { p_email: email }), 'Solicitud');
+  // ---------- solicitudes y notificaciones ----------
+  C.solicitudCrear = (orgId, tipo, cantidad, mensaje) => rpc('vigia_solicitud_crear', { p_org: orgId, p_tipo: tipo, p_cantidad: cantidad ? +cantidad : null, p_mensaje: mensaje || null }, 'Solicitud');
+  C.solicitudes = async (orgId, soloPendientes) => { let q = C.cliente().from('vigia_solicitudes').select('id,org_id,solicitante_email,tipo,cantidad,mensaje,estado,respuesta,resuelta_por,creada_en,resuelta_en'); if (orgId) q = q.eq('org_id', orgId); if (soloPendientes) q = q.eq('estado', 'pendiente'); return chk(await q.order('creada_en', { ascending: false }).limit(100), 'Solicitudes'); };
+  C.solicitudResolver = (id, estado, respuesta) => rpc('vigia_solicitud_resolver', { p_id: id, p_estado: estado, p_respuesta: respuesta || null }, 'Solicitud');
+  C.notificaciones = async () => chk(await C.cliente().from('vigia_notificaciones').select('id,tipo,titulo,cuerpo,datos,para_plataforma,creada_en,leida_en').order('creada_en', { ascending: false }).limit(60), 'Notificaciones');
+  C.notificacionesMarcar = id => rpc('vigia_notificaciones_marcar', { p_id: id || null }, 'Notificaciones');
+  // ---------- plataforma ----------
+  C.plataformaResumen = async () => ((await rpc('vigia_plataforma_resumen', {}, 'Plataforma')) || [])[0] || {};
+  C.plataformaCuentas = () => rpc('vigia_plataforma_cuentas', {}, 'Cuentas');
+  C.confirmarCuenta = userId => rpc('vigia_plataforma_confirmar_cuenta', { p_user: userId }, 'Confirmar cuenta');
+  C.orgRequerir2fa = (orgId, si) => rpc('vigia_org_requerir_2fa', { p_org: orgId, p_requerir: !!si }, 'Doble factor');
+  C.reiniciar2fa = (orgId, userId) => rpc('vigia_miembro_reiniciar_2fa', { p_org: orgId, p_user: userId }, 'Doble factor');
 
   C.crearOrganizacion = async nombre => chk(await C.cliente().rpc('vigia_crear_organizacion', { p_nombre: nombre }), 'Crear organización');
   C.agregarMiembro = (orgId, email, rol) => C.miembroAgregar(orgId, email, rol);

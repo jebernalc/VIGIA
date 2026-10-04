@@ -51,7 +51,7 @@ Las contraseñas se pueden fijar para demostraciones copiando `vigia.config.exam
 
 Menú **Analítica y casos de uso** → «Cargar demostración de casos de uso». La demostración incluye 12 casos activos: conteo de entradas y salidas, ingreso en grupo, intrusión, merodeo, aglomeración, vehículo mal estacionado, puerta abierta, objeto abandonado, manipulación de cámara, color de prenda, mapa de calor y humo (experimental). Todos se verificaron con IA real sobre un video con guion conocido. Detalle en `docs/CASOS_DE_USO.md`; guion para la alta dirección en `docs/ESTADO_PRESENTACION.md`.
 
-## Acceso con cuenta y administración (v1.2)
+## Acceso con cuenta y administración (v1.3)
 
 La pantalla de acceso tiene tres pestañas: **Ingresar**, **Registrar propietario** (crea la organización y queda como administrador) y **Soy del equipo** (crea la cuenta; el administrador la agrega con su correo y rol). Las cuentas son reales (Supabase Auth) y sirven en cualquier navegador.
 
@@ -61,8 +61,12 @@ En **Administración → Usuarios, roles y licencias** el administrador controla
 - **Licencia de cada usuario**: activa o suspendida y fecha de vencimiento. Una licencia suspendida o vencida impide ingresar.
 - **Licencia de la organización**: plan, cupo de usuarios y de cámaras, vencimiento (los fija el administrador de la plataforma).
 - **Clave temporal** con cambio obligatorio, quitar miembros y **registro de cambios** de administración.
+- **Doble factor (2FA)** con aplicación de autenticación (TOTP): opcional para cada persona en *Mi cuenta y seguridad*, obligatorio para el administrador de la plataforma y para las organizaciones que lo exijan. Con 2FA activo, la nube sólo entrega datos a sesiones verificadas con el código.
+- **Recuperación de acceso**: enlace por correo, clave temporal con cambio obligatorio y aviso automático al administrador cuando alguien pulsa «Olvidé mi contraseña».
+- **Solicitudes y notificaciones**: cada organización pide más usuarios, cámaras, cambio de plan, renovación o soporte; la plataforma aprueba o rechaza y la respuesta llega a la bandeja de notificaciones.
+- **Panel de la plataforma** (sólo su administrador): organizaciones, licencias, cuentas (confirmación manual, 2FA), solicitudes pendientes y actividad.
 
-Los videos y su análisis siguen guardados sólo en el navegador de cada equipo; en «Otras opciones» queda la demostración local sin cuenta.
+Los videos y su análisis siguen guardados sólo en el navegador de cada equipo.
 
 ## Funciones avanzadas (v1.1)
 

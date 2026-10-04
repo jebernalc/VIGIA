@@ -6,7 +6,7 @@ const JS = [
   'node_modules/mp4box/dist/mp4box.all.min.js', 'src/js/mp4cut.js',
   'src/js/media.js', 'src/js/analytics.js', 'src/js/live.js', 'src/js/api-pro.js', 'src/js/pro.js', 'src/js/nlp.js', 'src/js/chat.js', 'src/js/reports.js',
   'node_modules/jspdf/dist/jspdf.umd.min.js', 'node_modules/@supabase/supabase-js/dist/umd/supabase.js', 'src/js/cloud.js',
-  'src/js/ui-core.js', 'src/js/ui-chat.js', 'src/js/ui-views.js', 'src/js/ui-analytics.js', 'src/js/ui-pro.js', 'src/js/ui-acceso.js', 'src/js/caps.js', 'src/js/tests.js'
+  'src/js/ui-core.js', 'src/js/ui-chat.js', 'src/js/ui-views.js', 'src/js/ui-analytics.js', 'src/js/ui-pro.js', 'src/js/ui-acceso.js', 'src/js/ui-plataforma.js', 'src/js/caps.js', 'src/js/tests.js'
 ];
 const safe = s => s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
 let html = fs.readFileSync(R('src/index.html'), 'utf8');

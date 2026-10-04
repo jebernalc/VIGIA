@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const V = window.V; const A = V.app; const C = V.cloud; const esc = V.esc; const I = V.icons;
-  const VERSION = (V.VERSION || '1.2.0');
+  const VERSION = (V.VERSION || '1.3.0');
   // el enlace de «olvidé mi contraseña» vuelve con type=recovery en la URL: se anota antes de que el cliente lo consuma
   let recuperacion = /type=recovery/.test(location.hash || '') || /type=recovery/.test(location.search || '');
   const loginLocal = A.renderLogin;
@@ -28,9 +28,42 @@
     }
   }
 
+  /** Pide el código de 6 dígitos de la aplicación de autenticación. true si se verificó. */
+  async function pedirCodigo2fa(factorId) {
+    for (;;) {
+      const c = await V.modal('Verificación en dos pasos', `<div class="col"><p class="small tx2">Abre tu aplicación de autenticación (Google Authenticator, Microsoft Authenticator, Authy…) y escribe el código de 6 dígitos de <b>VIGÍA</b>.</p>
+        <label class="f">Código<input type="text" id="mfc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" style="font-size:22px;letter-spacing:.3em;text-align:center"></label>
+        <p class="tiny muted">¿Perdiste el teléfono? Pide a tu administrador «Reiniciar 2FA».</p></div>`,
+        [{ label: 'Cancelar', value: null }, { label: 'Verificar', cls: 'pri', collect: bg => bg.querySelector('#mfc').value }]);
+      if (c == null) return false;
+      if (!/^\d{6}$/.test(String(c).replace(/\s+/g, ''))) { V.toast('Escribe los 6 dígitos.', 'warn'); continue; }
+      try { await C.mfa.verificar(factorId, c); return true; } catch (e) { V.toast(C.mensaje(e), 'bad', 7000); }
+    }
+  }
+  /** Activa el doble factor: muestra el QR, pide un código y lo verifica. true si quedó activo. */
+  async function configurar2fa(obligatorio) {
+    let f; try { f = await C.mfa.inscribir(); } catch (e) { V.toast(C.mensaje(e), 'bad', 9000); return false; }
+    for (;;) {
+      const c = await V.modal('Activar la verificación en dos pasos', `<div class="col">${obligatorio ? '<div class="alert-box small">Tu cuenta debe usar doble factor para ingresar.</div>' : ''}
+        <ol class="small" style="margin:0;padding-left:18px"><li>Instala una aplicación de autenticación en tu teléfono (Google Authenticator, Microsoft Authenticator o Authy).</li><li>Escanea este código QR, o escribe la clave manualmente.</li><li>Escribe el código de 6 dígitos que muestra la aplicación.</li></ol>
+        <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap"><img src="${esc(f.qr)}" alt="Código QR para la aplicación de autenticación" width="180" height="180" style="background:#fff;border-radius:8px;padding:6px">
+          <div class="col grow"><div class="tiny muted">Clave manual</div><div class="mono small" style="user-select:all;word-break:break-all">${esc(f.secreto)}</div>
+          <label class="f" style="margin-top:8px">Código de 6 dígitos<input type="text" id="mfc" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" style="font-size:20px;letter-spacing:.3em;text-align:center"></label></div></div></div>`,
+        [{ label: obligatorio ? 'Salir' : 'Cancelar', value: null }, { label: 'Activar', cls: 'pri', collect: bg => bg.querySelector('#mfc').value }], { wide: true });
+      if (c == null) { try { await C.mfa.quitar(f.id); } catch (_) { } return false; }
+      if (!/^\d{6}$/.test(String(c).replace(/\s+/g, ''))) { V.toast('Escribe los 6 dígitos.', 'warn'); continue; }
+      try { await C.mfa.verificar(f.id, c); V.toast('Doble factor activado.'); return true; } catch (e) { V.toast(C.mensaje(e), 'bad', 7000); }
+    }
+  }
+  A.configurar2fa = configurar2fa;
+
   /** Con la cuenta ya verificada: lee organización, rol, permisos y licencia, y abre la sesión. */
   A.entrarConCuenta = async function (avisar) {
     const user = C.user; if (!user) return false;
+    let mf = null; try { mf = await C.mfa.estado(); } catch (_) { }
+    if (mf && mf.pideCodigo && mf.verificados.length) {
+      if (!await pedirCodigo2fa(mf.verificados[0].id)) { await C.salir().catch(() => { }); avisar('Para ingresar debes escribir el código de tu aplicación de autenticación.'); return false; }
+    }
     let acc = await C.acceso();
     const meta = user.user_metadata || {};
     if (!acc.length && meta.vigia_org) { // propietario que confirmó su correo: se crea la organización en su primer ingreso
@@ -50,6 +83,9 @@
       const id = await V.modal('Elige la organización', '<div class="col">' + acc.map((x, i) => `<label class="check"><input type="radio" name="aorg" value="${x.org_id}" ${i ? '' : 'checked'}> ${esc(x.org_nombre)} <span class="badge">${esc(V.ROLES[x.rol] || x.rol)}</span>${C.bloqueo(x) ? ' <span class="badge bad">licencia no vigente</span>' : ''}</label>`).join('') + '</div>',
         [{ label: 'Cancelar', value: null }, { label: 'Entrar', cls: 'pri', collect: bg => (bg.querySelector('input[name=aorg]:checked') || {}).value }]);
       if (!id) return false; a = acc.find(x => x.org_id === id) || a;
+    }
+    if ((a.es_plataforma || a.requiere_2fa) && mf && !mf.verificados.length) {
+      if (!await configurar2fa(true)) { await C.salir().catch(() => { }); avisar(a.es_plataforma ? 'El administrador de la plataforma debe activar el doble factor para ingresar.' : a.org_nombre + ' exige doble factor a todo su equipo. Actívalo para ingresar.'); return false; }
     }
     const bloqueo = C.bloqueo(a);
     // el administrador entra aunque la licencia de la organización no esté vigente, sólo para ver su estado
@@ -87,9 +123,8 @@
         <div class="row small" id="alinks" style="gap:16px"><button type="button" class="linkbtn" id="aforgot">Olvidé mi contraseña</button><button type="button" class="linkbtn" id="aacc">Olvidé mi cuenta</button></div>
       </form>
       <div id="ahelp" class="alert-box info small" hidden style="margin-top:12px"><b>¿Cuál es mi cuenta?</b><br>Tu cuenta es el <b>correo</b> con el que te registraste; no hay otro nombre de usuario. Busca en tu bandeja (y en spam) el mensaje de confirmación de VIGÍA / «Supabase Auth»: llegó al correo que usaste. Si eres del equipo, pregúntale a tu administrador: él ve tu correo en <i>Administración → Usuarios, roles y licencias</i>.</div>
-      <details style="margin-top:18px" class="small muted"><summary>Otras opciones</summary>
-        <p>Las cuentas, roles y licencias se administran en la nube. Los videos y su análisis se guardan sólo en este navegador.</p>
-        <button type="button" class="btn sm" id="tlocal">Demostración local sin cuenta</button></details>
+      <p class="tiny muted" style="margin-top:16px">Cuentas, roles y licencias protegidos en la nube · verificación en dos pasos disponible · los videos y su análisis permanecen en este equipo.</p>
+      ${location.protocol === 'file:' || /demo/.test(location.hash) ? '<details class="small muted"><summary>Otras opciones</summary><button type="button" class="btn sm" id="tlocal" style="margin-top:6px">Entorno de pruebas local sin cuenta</button></details>' : ''}
     </div></main>`;
     const q = s => V.$(s);
     const aviso = (t, tipo) => { q('#amsg').innerHTML = t ? '<span style="color:var(--' + (tipo === 'ok' ? 'ok' : tipo === 'info' ? 'info' : 'bad') + ')">' + esc(t) + '</span>' : ''; };
@@ -104,11 +139,13 @@
     pinta();
     V.$('.acceso .tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; aviso(''); pinta(); } };
     q('#ashow').onclick = () => { const p = q('#apw'); const ver = p.type === 'password'; p.type = ver ? 'text' : 'password'; q('#ashow').textContent = ver ? 'Ocultar' : 'Mostrar'; q('#ashow').setAttribute('aria-pressed', ver); };
-    q('#tlocal').onclick = () => { A._modoLocal = true; A.renderLogin(); };
+    if (q('#tlocal')) q('#tlocal').onclick = () => { A._modoLocal = true; A.renderLogin(); };
     q('#aacc').onclick = () => { q('#ahelp').hidden = !q('#ahelp').hidden; };
     q('#aforgot').onclick = async () => {
       const email = q('#aemail').value.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return aviso('Escribe tu correo arriba y vuelve a pulsar «Olvidé mi contraseña».');
-      try { await C.recuperarClave(email); aviso('Si ese correo tiene cuenta, te enviamos un enlace para crear una contraseña nueva. Revisa también spam.', 'ok'); } catch (e) { aviso(C.mensaje(e)); }
+      let correo = true; try { await C.recuperarClave(email); } catch (e) { correo = false; }
+      try { await C.pedirAyuda(email); } catch (_) { }
+      aviso((correo ? 'Si ese correo tiene cuenta, te enviamos un enlace para crear una contraseña nueva (revisa spam). ' : '') + 'También avisamos a tu administrador para que pueda darte una clave temporal.', 'ok');
     };
     q('#aresend').onclick = async () => { try { await C.reenviarConfirmacion(q('#aemail').value.trim()); aviso('Correo de confirmación reenviado.', 'ok'); } catch (e) { aviso(C.mensaje(e)); } };
     q('#af').onsubmit = async e => {
@@ -181,19 +218,20 @@
       <div class="card" style="margin-top:12px;overflow:auto"><h2 class="h2">Miembros (${ms.length})</h2>
         <table class="table" style="margin-top:8px;min-width:820px"><tr><th>Persona</th><th>Rol</th><th>Licencia</th><th>Vence</th><th>Permisos</th><th>Último ingreso</th><th></th></tr>
         ${ms.map(m => { const [et, cl] = estadoLic(m); const yo = m.user_id === A.session.nube.userId; return `<tr data-u="${m.user_id}">
-          <td><b>${esc(m.nombre || m.email.split('@')[0])}</b>${m.propietario ? ' <span class="badge acc">propietario</span>' : ''}${yo ? ' <span class="badge">tú</span>' : ''}<div class="tiny muted">${esc(m.email)}</div></td>
+          <td><b>${esc(m.nombre || m.email.split('@')[0])}</b>${m.propietario ? ' <span class="badge acc">propietario</span>' : ''}${yo ? ' <span class="badge">tú</span>' : ''}${m.tiene_2fa ? ' <span class="badge ok" title="Verificación en dos pasos activa">2FA</span>' : ''}<div class="tiny muted">${esc(m.email)}</div></td>
           <td><select data-c="rol" aria-label="Rol de ${esc(m.email)}">${Object.entries(V.ROLES).map(([k, v]) => `<option value="${k}" ${m.rol === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></td>
           <td><span class="badge ${cl}">${et}</span><div style="margin-top:4px"><button class="btn xs" data-c="activo" data-v="${m.activo ? '0' : '1'}">${m.activo ? 'Suspender' : 'Reactivar'}</button></div></td>
           <td><input type="date" data-c="vence" value="${esc(m.licencia_vence || '')}" aria-label="Vencimiento de la licencia de ${esc(m.email)}" style="width:140px">${m.licencia_vence ? '<div><button class="linkbtn tiny" data-c="sinv">sin vencimiento</button></div>' : '<div class="tiny muted">sin vencimiento</div>'}</td>
           <td><button class="btn xs" data-c="permisos">${nExc(m) ? nExc(m) + ' excepción(es)' : 'Según el rol'}</button></td>
           <td class="small">${m.ultimo_ingreso ? esc(V.fmtDateTime(Date.parse(m.ultimo_ingreso))) : '<span class="muted">nunca</span>'}</td>
-          <td><div class="row" style="gap:4px;flex-wrap:nowrap">${yo ? '' : '<button class="btn xs" data-c="clave">Clave temporal</button><button class="btn xs danger" data-c="quitar">Quitar</button>'}</div></td></tr>`; }).join('')}</table>
+          <td><div class="row" style="gap:4px;flex-wrap:nowrap">${yo ? '' : '<button class="btn xs" data-c="clave">Clave temporal</button>' + (m.tiene_2fa ? '<button class="btn xs" data-c="r2fa">Reiniciar 2FA</button>' : '') + '<button class="btn xs danger" data-c="quitar">Quitar</button>'}</div></td></tr>`; }).join('')}</table>
         <div class="tiny muted" style="margin-top:8px">Los cambios de rol, permisos y licencia se aplican en el siguiente ingreso de la persona. Una licencia suspendida o vencida impide entrar y corta la sincronización con la nube.</div></div>
 
-      ${orgs ? `<div class="card" style="margin-top:12px;overflow:auto"><h2 class="h2">Organizaciones de la plataforma (${orgs.length})</h2><table class="table" style="margin-top:8px;min-width:720px"><tr><th>Organización</th><th>Propietario</th><th>Plan</th><th>Usuarios</th><th>Cámaras</th><th>Vence</th><th>Estado</th><th></th></tr>${orgs.map(o => `<tr><td><b>${esc(o.nombre)}</b></td><td class="small">${esc(o.propietario || '')}</td><td>${esc(PLAN[o.plan] || o.plan)}</td><td>${o.usuarios} / ${o.max_usuarios}</td><td>${o.max_camaras}</td><td>${esc(fecha(o.licencia_vence))}</td><td><span class="badge ${o.licencia_estado === 'activa' && (!o.licencia_vence || o.licencia_vence >= hoy()) ? 'ok' : 'bad'}">${esc(o.licencia_estado === 'activa' && o.licencia_vence && o.licencia_vence < hoy() ? 'vencida' : o.licencia_estado)}</span></td><td><button class="btn xs" data-lic="${o.org_id}">Licencia</button></td></tr>`).join('')}</table></div>` : ''}
+${a.es_plataforma ? '<div class="alert-box info small" style="margin-top:12px">Eres administrador de la plataforma: las licencias de todas las organizaciones, las cuentas y las solicitudes están en la pestaña <b>Plataforma</b>.</div>' : ''}
 
       <div class="card" style="margin-top:12px"><h2 class="h2">Registro de cambios de administración</h2><div class="col tiny" style="gap:4px;margin-top:8px">${eventos.map(e => `<div><span class="muted">${esc(V.fmtDateTime(Date.parse(e.en)))}</span> · ${esc(e.actor_email || 'sistema')} · <b>${esc(e.accion)}</b> <span class="muted">${esc(Object.entries(e.detalle || {}).filter(([, v]) => typeof v !== 'object').map(([k, v]) => k + ': ' + v).join(' · '))}</span></div>`).join('') || '<span class="muted">Sin cambios registrados.</span>'}</div></div>
-      <div id="uperm"></div>`;
+      <div id="uextra"></div>`;
+    if (adm.usuariosExtra) adm.usuariosExtra(V.$('#uextra'), a, orgId, () => adm.render(V.$('#main'), 'usuarios')).catch(() => { });
     const recargar = () => adm.render(V.$('#main'), 'usuarios');
     const hacer = async (fn, ok) => { try { await fn(); if (ok) V.toast(ok); recargar(); } catch (e) { V.toast(C.mensaje(e), 'bad', 9000); recargar(); } };
     V.$('#umadd').onsubmit = e => { e.preventDefault(); const mail = V.$('#umail').value.trim(); if (!mail) return; hacer(() => C.miembroAgregar(orgId, mail, V.$('#urol').value, V.$('#unom').value.trim()), 'Miembro agregado.'); };
@@ -207,6 +245,7 @@
       const lic = e.target.closest('[data-lic]'); if (lic) return editarLicencia(lic.dataset.lic, (orgs || []).find(o => o.org_id === lic.dataset.lic) || { org_id: orgId, nombre: a.org_nombre, plan: a.plan, max_usuarios: a.max_usuarios, max_camaras: a.max_camaras, licencia_vence: a.org_vence, licencia_estado: a.org_estado }, recargar);
       const el = e.target.closest('button[data-c]'); if (!el || !el.closest('[data-u]')) return; const m = de(el); const k = el.dataset.c;
       if (k === 'activo') return hacer(() => C.miembroActualizar(orgId, m.user_id, { activo: el.dataset.v === '1' }), el.dataset.v === '1' ? 'Licencia reactivada.' : 'Licencia suspendida: la persona ya no puede ingresar.');
+      if (k === 'r2fa') { if (await V.confirmar('Reiniciar doble factor', 'Se eliminará la verificación en dos pasos de ' + m.email + ' y se cerrarán sus sesiones. Úselo sólo si la persona perdió su teléfono y usted verificó su identidad.', 'Reiniciar')) hacer(() => C.reiniciar2fa(orgId, m.user_id), 'Doble factor reiniciado.'); return; }
       if (k === 'sinv') return hacer(() => C.miembroActualizar(orgId, m.user_id, { sinVencimiento: true }), 'Licencia sin vencimiento.');
       if (k === 'quitar') { if (await V.confirmar('Quitar miembro', '¿Quitar a ' + m.email + ' de la organización? Pierde el acceso de inmediato; su cuenta no se borra.', 'Quitar')) hacer(() => C.miembroQuitar(orgId, m.user_id), 'Miembro quitado.'); return; }
       if (k === 'clave') {
@@ -229,6 +268,7 @@
     };
   };
 
+  A.editarLicencia = editarLicencia;
   async function editarLicencia(orgId, o, recargar) {
     const r = await V.modal('Licencia de ' + (o.nombre || 'la organización'), `<div class="col">
       <label class="f">Plan<select id="lpl">${Object.entries(PLAN).map(([k, v]) => `<option value="${k}" ${o.plan === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
